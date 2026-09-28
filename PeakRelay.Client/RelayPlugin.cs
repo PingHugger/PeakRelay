@@ -35,6 +35,9 @@ public sealed class RelayPlugin : BaseUnityPlugin
         _harmony.PatchAll(typeof(PunSocketPatches));
         _harmony.PatchAll(typeof(ConnectPatches));
 
+        // server browser: patches (when the game version matches) + page injection
+        GameAPI.Initialize(_harmony);
+
         Log.LogInfo($"PeakRelay {PluginVersion}: relay={RelayConfig.RelayEnabled} " +
                     $"({RelayConfig.Host}:{RelayConfig.Port}) trace={RelayConfig.TraceEnabled}");
     }

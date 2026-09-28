@@ -30,6 +30,39 @@
       <HintPath>..\lib\PhotonUnityNetworking.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <!-- game framework + UI stack (server browser page, Zorro UI page system) -->
+    <Reference Include="Photon">
+      <HintPath>..\lib\Photon.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Zorro.UI.Runtime">
+      <HintPath>..\lib\Zorro.UI.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Zorro.Core.Runtime">
+      <HintPath>..\lib\Zorro.Core.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>..\lib\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>..\lib\Newtonsoft.Json.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>..\lib\UnityEngine.UI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>..\lib\UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>..\lib\UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="PhotonRealtime">
       <HintPath>..\lib\PhotonRealtime.dll</HintPath>
       <Private>false</Private>
