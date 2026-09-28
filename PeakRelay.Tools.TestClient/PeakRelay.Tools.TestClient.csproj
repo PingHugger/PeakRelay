@@ -8,10 +8,20 @@
     <LangVersion>12</LangVersion>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <RootNamespace>PeakRelay.Tools.TestClient</RootNamespace>
+    <NoWarn>$(NoWarn);CS0436</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\PeakRelay.Protocol\PeakRelay.Protocol.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="Photon3Unity3D">
+      <HintPath>..\lib\Photon3Unity3D.dll</HintPath>
+    </Reference>
+    <Reference Include="PhotonRealtime">
+      <HintPath>..\lib\PhotonRealtime.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
 </Project>
