@@ -1,0 +1,8 @@
+{"t":"12:00:00.101","dir":"send","bytes":68,"cmds":[{"ty":2,"ch":255,"f":1,"sq":0,"pl":32}]}
+{"t":"12:00:00.150","dir":"recv","bytes":84,"cmds":[{"ty":3,"ch":255,"f":1,"sq":0,"pl":32},{"ty":1,"ch":0,"f":1,"sq":1,"pl":8}]}
+{"t":"12:00:00.201","dir":"send","bytes":52,"cmds":[{"ty":5,"ch":0,"f":0,"sq":0,"pl":0}]}
+{"t":"12:00:00.251","dir":"recv","bytes":52,"cmds":[{"ty":5,"ch":0,"f":0,"sq":0,"pl":0}]}
+{"t":"12:00:00.301","dir":"send","bytes":147,"cmds":[{"ty":6,"ch":0,"f":1,"sq":2,"pl":123},{"ty":7,"ch":0,"f":0,"sq":5,"pl":8}]}
+{"t":"12:00:00.351","dir":"recv","bytes":96,"cmds":[{"ty":8,"ch":0,"f":1,"sq":3,"pl":64}]}
+this line is intentionally malformed
+{"t":"12:00:00.401","dir":"recv","bytes":44,"cmds":[]}

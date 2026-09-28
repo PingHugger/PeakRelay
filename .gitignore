@@ -1,0 +1,18 @@
+bin/
+obj/
+*.user
+.vs/
+*.binlog
+*.log
+
+# Recon artifacts kept locally, never committed (regenerate with scripts/decompile.sh)
+references/
+
+# Reference assemblies, provisioned by scripts/fetch-libs.sh — never redistribute
+game or
+# framework binaries
+lib/
+
+tools/dl/
+tools/dotnet/
+tools/dotnet-tools/
