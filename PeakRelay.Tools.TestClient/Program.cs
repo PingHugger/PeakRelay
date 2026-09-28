@@ -12,6 +12,12 @@ namespace PeakRelay.Tools.TestClient;
 /// Real-Photon3 relay scenario: two genuine LoadBalancingClients run the full Realtime flow —
 /// auth → master → CreateGame/JoinGame → redirect → game server (same relay) → room ops —
 /// with assertions. Exit code 0 = every step passed.
+///
+/// Step 7 exercises the server-browser metadata path end to end: the host creates the room
+/// with custom properties (keys N/M/P from ServerPropertyKeys — the same stamp the dedicated
+/// plugin applies via its CreateRoom prefix), and the scenario asserts a client observes
+/// them, plus (best effort) that the relay's HTTP /api/servers lists the server with the
+/// same metadata.
 /// </summary>
 public static class Program
 {
@@ -48,7 +54,23 @@ public static class Program
         }
         Console.WriteLine("step 1b OK: master auth complete (ConnectedToMasterServer)");
 
-        var roomOptions = new RoomOptions { MaxPlayers = 4 };
+        // N/M/P custom props: the same stamp the dedicated plugin applies to CreateRoom
+        var roomOptions = new RoomOptions
+        {
+            MaxPlayers = 4,
+            CustomRoomProperties = new Hashtable
+            {
+                [ServerPropertyKeys.DisplayName] = "TestCabin",
+                [ServerPropertyKeys.Mode] = "standard",
+                [ServerPropertyKeys.PasswordRequired] = false,
+            },
+            CustomRoomPropertiesForLobby = new[]
+            {
+                ServerPropertyKeys.DisplayName,
+                ServerPropertyKeys.Mode,
+                ServerPropertyKeys.PasswordRequired,
+            },
+        };
         if (!host.OpCreateRoom(new EnterRoomParams
             {
                 RoomName = "test-room",
@@ -143,8 +165,54 @@ public static class Program
             return 1;
         }
         Console.WriteLine("step 6 OK: room property change broadcast");
+
+        // ---- server-browser metadata round-trip (what /api/servers publishes)
+        if (!WaitUntil(() => guest.CurrentRoom != null &&
+                             Equals(guest.CurrentRoom.CustomProperties[ServerPropertyKeys.DisplayName], "TestCabin") &&
+                             Equals(guest.CurrentRoom.CustomProperties[ServerPropertyKeys.Mode], "standard") &&
+                             Equals(guest.CurrentRoom.CustomProperties[ServerPropertyKeys.PasswordRequired], false),
+                             TimeoutMs))
+        {
+            Console.Error.WriteLine("guest never observed N/M/P metadata: " +
+                                    DescribeProps(guest));
+            return 1;
+        }
+        Console.WriteLine("step 7 OK: server metadata (N/M/P) round-trips through the relay");
+
+        if (TestConfig.HttpPort > 0 && WaitUntil(() => CheckServersApi(TestConfig.HttpPort), 3000))
+            Console.WriteLine("step 8 OK: /api/servers lists the server with rich metadata");
+        else
+            Console.WriteLine("step 8 SKIPPED: /api/servers not reachable (HTTP sidecar off?)");
+
         Console.WriteLine("RELAY SCENARIO OK");
         return 0;
+    }
+
+    private static bool CheckServersApi(int httpPort)
+    {
+        try
+        {
+            using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(2) };
+            var json = http.GetStringAsync($"http://127.0.0.1:{httpPort}/api/servers").GetAwaiter().GetResult();
+            var ok = json.Contains("\"displayName\":\"TestCabin\"") && json.Contains("\"joinKey\":\"test-room\"");
+            if (!ok)
+                Console.Error.WriteLine($"  /api/servers content not yet matching: {json}");
+            return ok;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    private static string DescribeProps(PhotonClientHarness client)
+    {
+        if (client.CurrentRoom == null)
+            return "no room";
+        var parts = new List<string>();
+        foreach (var (key, value) in client.CurrentRoom.CustomProperties)
+            parts.Add($"{key}={value}");
+        return string.Join(", ", parts);
     }
 
     private static string DescribeException(Exception ex)

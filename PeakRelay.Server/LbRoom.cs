@@ -14,7 +14,8 @@ public sealed class LbRoom
     private const byte EvLeave = 254;
     private const byte EvProps = 253;
 
-    private const byte KeyMasterClientId = 203;
+    /// <summary>Master-client key INSIDE the room-properties hashtable (GamePropertyKey.MasterClientId).</summary>
+    private const byte KeyMasterClientIdInProps = 248;
 
     public string Name { get; }
 
@@ -50,13 +51,17 @@ public sealed class LbRoom
         }
     }
 
-    /// <summary>Game properties snapshot including the MasterClientId key.</summary>
+    /// <summary>
+    /// Game properties snapshot as the game-entry response must carry them (param 248):
+    /// custom props plus the master-client key (Realtime's RoomInfo caches key 248 as
+    /// MasterClientId — LoadBalancingClient.GameEnteredOnGameServer → ReadoutProperties).
+    /// </summary>
     public Hashtable SnapshotGameProperties()
     {
         var props = new Hashtable();
         foreach (var (key, value) in Properties)
             props[key] = value;
-        props[KeyMasterClientId] = MasterClientNumber;
+        props[KeyMasterClientIdInProps] = MasterClientNumber;
         return props;
     }
 

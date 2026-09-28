@@ -185,12 +185,29 @@ public static class RoomListHttp
 
     private sealed record RoomDto(string Name, int Players, int Max);
 
+    private sealed record ServerApiDto(
+        string JoinKey,
+        string DisplayName,
+        string Mode,
+        bool PasswordRequired,
+        int Players,
+        int Max);
+
     private static List<RoomDto> ToRoomDtos(LbDispatcher dispatcher)
     {
         var rooms = dispatcher.SnapshotRooms();
         var dtos = new List<RoomDto>(rooms.Count);
         foreach (var (name, players, max) in rooms)
             dtos.Add(new RoomDto(name, players, max));
+        return dtos;
+    }
+
+    private static List<ServerApiDto> ToServerDtos(LbDispatcher dispatcher)
+    {
+        var servers = ServerDirectory.SnapshotServers(dispatcher);
+        var dtos = new List<ServerApiDto>(servers.Count);
+        foreach (var s in servers)
+            dtos.Add(new ServerApiDto(s.JoinKey, s.DisplayName, s.Mode, s.PasswordRequired, s.Players, s.Max));
         return dtos;
     }
 
@@ -201,6 +218,11 @@ public static class RoomListHttp
             case "/rooms":
             {
                 var payload = JsonSerializer.Serialize(ToRoomDtos(dispatcher), JsonOptions);
+                return (200, "application/json", payload);
+            }
+            case "/api/servers":
+            {
+                var payload = JsonSerializer.Serialize(ToServerDtos(dispatcher), JsonOptions);
                 return (200, "application/json", payload);
             }
             case "/":

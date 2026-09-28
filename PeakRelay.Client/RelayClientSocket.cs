@@ -1,25 +1,29 @@
 using System;
 using System.Buffers.Binary;
-using System.Collections.Concurrent;
 using System.Net.Sockets;
 using System.Threading;
 using ExitGames.Client.Photon;
 using PeakRelay.Protocol;
 
-namespace PeakRelay.Tools.TestClient;
+namespace PeakRelay.Client;
 
 /// <summary>
-/// Datagram pipe between a real Photon3 peer and the relay, over TCP + relay envelopes.
-/// Mirrors RelaySocket from the client plugin, minus BepInEx/Unity dependencies.
+/// Active relay transport for the player plugin: pipes PUN datagrams to the relay server
+/// over TCP envelopes. This is the M1-validated transport (RelayTestSocket /
+/// RelayGameSocket) packaged for normal game clients — Photon3 sees a connected socket
+/// and speaks its usual datagrams; the envelope framing is ours.
+///
+/// Photon3 drives IPhotonSocket: Connect() must complete asynchronously by calling
+/// peerBase.OnConnect() (or HandleException on failure) from a worker thread.
 /// </summary>
-public sealed class RelayTestSocket : IPhotonSocket, IDisposable
+public sealed class RelayClientSocket : IPhotonSocket, IDisposable
 {
     private readonly object _sync = new();
     private TcpClient? _tcp;
     private NetworkStream? _stream;
     private int _requestId;
 
-    public RelayTestSocket(PeerBase peer) : base(peer)
+    public RelayClientSocket(PeerBase peer) : base(peer)
     {
         PollReceive = false;
     }
@@ -42,7 +46,7 @@ public sealed class RelayTestSocket : IPhotonSocket, IDisposable
                 return false;
             State = PhotonSocketState.Connecting;
         }
-        new Thread(ConnectThread) { IsBackground = true }.Start();
+        new Thread(ConnectThread) { IsBackground = true, Name = "peakrelay-client-connect" }.Start();
         return true;
     }
 
@@ -62,18 +66,17 @@ public sealed class RelayTestSocket : IPhotonSocket, IDisposable
 
     public override PhotonSocketError Send(byte[] data, int length)
     {
-        Diagnostics.Dump("C->S send", data, length);
         var stream = _stream;
         if (stream == null)
             return PhotonSocketError.Skipped;
         try
         {
-            var envelope = Envelope.Write(RelayOp.Data, 0, NextId(), data.AsSpan(0, length));
+            var envelope = Envelope.Write(RelayOp.Data, Envelope.FlagNone, NextId(), data.AsSpan(0, length));
             stream.Write(Frame.Write(envelope));
             stream.Flush();
             return PhotonSocketError.Success;
         }
-        catch
+        catch (Exception)
         {
             HandleException(StatusCode.SendError);
             return PhotonSocketError.Exception;
@@ -88,28 +91,26 @@ public sealed class RelayTestSocket : IPhotonSocket, IDisposable
 
     private void ConnectThread()
     {
-        var host = TestConfig.Host;
-        var port = TestConfig.Port;
         try
         {
             var client = new TcpClient();
-            var task = client.ConnectAsync(host, port);
+            var task = client.ConnectAsync(RelayConfig.Host, RelayConfig.Port);
             if (!task.Wait(5000) || !client.Connected)
-                throw new TimeoutException($"relay {host}:{port}");
+                throw new TimeoutException($"relay {RelayConfig.Host}:{RelayConfig.Port} did not accept within 5s");
             _tcp = client;
             _stream = client.GetStream();
 
-            var hello = Envelope.Write(RelayOp.Hello, 0, NextId(), ReadOnlySpan<byte>.Empty);
+            var hello = Envelope.Write(RelayOp.Hello, Envelope.FlagNone, NextId(), ReadOnlySpan<byte>.Empty);
             _stream.Write(Frame.Write(hello));
             _stream.Flush();
 
             State = PhotonSocketState.Connected;
             peerBase.OnConnect();
-            new Thread(ReceiveLoop) { IsBackground = true }.Start();
+            new Thread(ReceiveLoop) { IsBackground = true, Name = "peakrelay-client-recv" }.Start();
         }
         catch (Exception ex)
         {
-            EnqueueDebugReturn(DebugLevel.ERROR, $"RelayTestSocket connect failed: {ex.Message}");
+            EnqueueDebugReturn(DebugLevel.ERROR, $"PeakRelay: relay connect to {RelayConfig.Host}:{RelayConfig.Port} failed: {ex.Message}");
             HandleException(StatusCode.ExceptionOnConnect);
         }
     }
@@ -121,33 +122,25 @@ public sealed class RelayTestSocket : IPhotonSocket, IDisposable
         {
             while (State == PhotonSocketState.Connected)
             {
-                if (!ReadFull(_stream!, header))
+                var stream = _stream;
+                if (stream == null || !ReadFull(stream, header))
                     break;
                 int frameLength = BinaryPrimitives.ReadInt32LittleEndian(header);
                 if (frameLength < Frame.HeaderSize || frameLength > Frame.HeaderSize + Frame.MaxPayload)
                     break;
                 var payload = new byte[frameLength - Frame.HeaderSize];
-                if (!ReadFull(_stream!, payload))
+                if (!ReadFull(stream, payload))
                     break;
                 if (Envelope.TryRead(payload, out var envelope) && envelope.Op == RelayOp.Data)
                 {
                     var datagram = envelope.Payload.ToArray();
-                    Diagnostics.Dump("S->C recv ", datagram, datagram.Length);
                     HandleReceivedDatagram(datagram, datagram.Length, willBeReused: false);
                 }
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            // surface the real failure instead of silently degrading to ExceptionOnReceive
-            var parts = new List<string>();
-            var cur = (Exception?)ex;
-            while (cur != null)
-            {
-                parts.Add($"{cur.GetType().FullName}: {cur.Message}");
-                cur = cur.InnerException;
-            }
-            Console.Error.WriteLine($"[recv-loop] {string.Join(" -> ", parts)}");
+            // fall through to the disconnect below
         }
         if (State == PhotonSocketState.Connected)
             HandleException(StatusCode.ExceptionOnReceive);

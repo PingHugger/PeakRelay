@@ -4,6 +4,9 @@ using PeakRelay.Protocol;
 
 namespace PeakRelay.Server;
 
+/// <summary>Immutable copy of a room's public state for HTTP consumers.</summary>
+public sealed record RoomSnapshot(string Name, int ActorCount, int MaxPlayers, Hashtable Properties);
+
 /// <summary>
 /// LoadBalancing operation dispatch across the master/game role split the Realtime client
 /// drives (LoadBalancingClient.cs:1518+: on the game server the client re-sends the cached
@@ -41,6 +44,26 @@ public sealed class LbDispatcher
             var result = new List<(string, int, int)>(_rooms.Count);
             foreach (var room in _rooms.Values)
                 result.Add((room.Name, room.ActorCount, room.MaxPlayers));
+            return result;
+        }
+    }
+
+    /// <summary>
+    /// Room state for the server directory: name, capacity and a copy of the room's
+    /// custom properties (server-browser metadata lives there, keys N/M/P).
+    /// </summary>
+    public List<RoomSnapshot> SnapshotRoomStates()
+    {
+        lock (_sync)
+        {
+            var result = new List<RoomSnapshot>(_rooms.Count);
+            foreach (var room in _rooms.Values)
+            {
+                var props = new Hashtable();
+                foreach (var (key, value) in room.Properties)
+                    props[key] = value;
+                result.Add(new RoomSnapshot(room.Name, room.ActorCount, room.MaxPlayers, props));
+            }
             return result;
         }
     }
@@ -202,7 +225,9 @@ public sealed class LbDispatcher
                     peer.PlayerProperties[key] = value;
             }
 
-            // game-server entry response: {255: name, 254: actorNr, 252: actorList}
+            // game-server entry response: {255: name, 254: actorNr, 252: actorList, 249: joiner
+            // props, 248: room props} — Realtime's GameEnteredOnGameServer reads 249/248 and
+            // feeds ReadoutProperties, so joiners learn custom room metadata (N/M/P) at join.
             var actorList = new int[room.Actors.Count];
             int i = 0;
             foreach (var key in room.Actors.Keys)
@@ -212,11 +237,21 @@ public sealed class LbDispatcher
                 [LbParam.RoomName] = roomName,
                 [LbParam.ActorNr] = peer.ActorNumber,
                 [LbParam.ActorList] = actorList,
+                [LbParam.PlayerProperties] = CopyOf(peer.PlayerProperties),
+                [LbParam.GameProperties] = room.SnapshotGameProperties(),
             });
 
             // join event to everyone (the joiner caches room state and fires OnJoinedRoom from it)
             room.BroadcastEvent(room.BuildJoinEvent(peer), null);
         }
+    }
+
+    private static Hashtable CopyOf(Hashtable source)
+    {
+        var copy = new Hashtable(source.Count);
+        foreach (var (key, value) in source)
+            copy[key] = value;
+        return copy;
     }
 
     private void HandleLeave(LbPeer peer)

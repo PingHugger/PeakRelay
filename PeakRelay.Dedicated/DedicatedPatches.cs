@@ -2,6 +2,8 @@ using System;
 using System.Linq;
 using HarmonyLib;
 using Photon.Pun;
+using PeakRelay.Protocol;
+using Photon.Realtime;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -37,6 +39,11 @@ public static class DedicatedPatches
     /// carries the "Player1" play-mode tag (CurrentPlayer is a playmode-test type not present
     /// in every headless setup, so patching is more robust than tag mutation). Config stays
     /// authoritative; useVanillaName=true restores the stock random-name behavior.
+    ///
+    /// The same prefix stamps the server's public metadata (display name, mode,
+    /// password-required flag) into RoomOptions.CustomRoomProperties — key N/M/P — which the
+    /// relay publishes on /api/servers for the client server browser. Key P is a bool flag,
+    /// never the password itself; the secret stays on the server for its own join check.
     /// </summary>
     [HarmonyPatch(typeof(NetworkConnector), "HandleConnectionState")]
     internal static class HostRoomNamePatch
@@ -47,12 +54,51 @@ public static class DedicatedPatches
             if (state is not HostState hostState)
                 return;
             var config = DedicatedState.Config;
-            if (config == null || config.UseVanillaName)
+            if (config == null)
                 return;
-            if (string.Equals(hostState.RoomName, DedicatedState.ConfiguredRoomName, StringComparison.Ordinal))
+            if (!config.UseVanillaName &&
+                !string.Equals(hostState.RoomName, DedicatedState.ConfiguredRoomName, StringComparison.Ordinal))
+            {
+                ServerLog.Info($"HostState.RoomName '{hostState.RoomName}' → '{DedicatedState.ConfiguredRoomName}' (config wins)");
+                hostState.RoomName = DedicatedState.ConfiguredRoomName;
+            }
+            DedicatedState.PendingRoomMetadata = new ExitGames.Client.Photon.Hashtable
+            {
+                [ServerPropertyKeys.DisplayName] = config.DisplayName,
+                [ServerPropertyKeys.Mode] = config.Mode,
+                [ServerPropertyKeys.PasswordRequired] = !string.IsNullOrEmpty(config.Password),
+            };
+        }
+    }
+
+    /// <summary>
+    /// CreateRoom is the single chokepoint every host path funnels through (HostState flow
+    /// and any other); when it fires with our pending metadata present, stamp it into the
+    /// room options so the relay can publish the server's public profile on /api/servers.
+    /// Key P is a bool flag, never the password itself — the secret stays on the server.
+    /// </summary>
+    [HarmonyPatch(typeof(Photon.Pun.PhotonNetwork), nameof(Photon.Pun.PhotonNetwork.CreateRoom))]
+    internal static class RoomOptionsMetadataPatch
+    {
+        [HarmonyPrefix]
+        public static void AttachMetadata(string roomName, RoomOptions roomOptions)
+        {
+            var props = DedicatedState.PendingRoomMetadata;
+            if (props == null || props.Count == 0 || roomOptions == null)
                 return;
-            ServerLog.Info($"HostState.RoomName '{hostState.RoomName}' → '{DedicatedState.ConfiguredRoomName}' (config wins)");
-            hostState.RoomName = DedicatedState.ConfiguredRoomName;
+            if (!string.Equals(roomName, DedicatedState.ConfiguredRoomName, StringComparison.Ordinal))
+                return; // not our hosted room
+            foreach (var (key, value) in props)
+                roomOptions.CustomRoomProperties[key] = value;
+            roomOptions.CustomRoomPropertiesForLobby = new[]
+            {
+                ServerPropertyKeys.DisplayName,
+                ServerPropertyKeys.Mode,
+                ServerPropertyKeys.PasswordRequired,
+            };
+            DedicatedState.PendingRoomMetadata = null;
+            ServerLog.Info($"room metadata attached to '{roomName}': display='{props[ServerPropertyKeys.DisplayName]}' " +
+                           "mode, passwordRequired");
         }
     }
 

@@ -13,6 +13,9 @@ namespace PeakRelay.Dedicated;
 public sealed class DedicatedConfig
 {
     public string RoomName { get; init; } = "DBPEAK";
+    public string DisplayName { get; init; } = "PeakRelay Dedicated";
+    public string Mode { get; init; } = "standard";
+    public string Password { get; init; } = "";
     public int MaxPlayers { get; init; } = 20;
     public bool Visible { get; init; } = true;
     public bool Open { get; init; } = true;
@@ -52,6 +55,9 @@ public sealed class DedicatedConfig
         return new DedicatedConfig
         {
             RoomName = S("roomName") ?? config.RoomName,
+            DisplayName = S("displayName") ?? config.DisplayName,
+            Mode = S("mode") ?? config.Mode,
+            Password = S("password") ?? config.Password,
             MaxPlayers = I("maxPlayers") ?? config.MaxPlayers,
             Visible = B("visible") ?? config.Visible,
             Open = B("open") ?? config.Open,
@@ -72,6 +78,9 @@ public sealed class DedicatedConfig
         return new DedicatedConfig
         {
             RoomName = Env("PEAKRELAY_ROOM") ?? config.RoomName,
+            DisplayName = Env("PEAKRELAY_DISPLAYNAME") ?? config.DisplayName,
+            Mode = Env("PEAKRELAY_MODE") ?? config.Mode,
+            Password = Env("PEAKRELAY_PASSWORD") ?? config.Password,
             MaxPlayers = EnvInt("PEAKRELAY_MAXPLAYERS") ?? config.MaxPlayers,
             Visible = EnvBool("PEAKRELAY_VISIBLE") ?? config.Visible,
             Open = EnvBool("PEAKRELAY_OPEN") ?? config.Open,
