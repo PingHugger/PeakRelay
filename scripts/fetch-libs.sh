@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Provisions lib/ (reference assemblies for building PeakRelay.Client) without
-# redistributing any game or mod-framework files in the repository.
+# Provisions lib/ (reference assemblies for building PeakRelay.Client and
+# PeakRelay.Dedicated) without redistributing any game or mod-framework files.
 #
 # Usage: scripts/fetch-libs.sh [path-to-PEAK-install]
 # Requires: curl, unzip
@@ -15,7 +15,9 @@ BEPINEX_URL="https://github.com/BepInEx/BepInEx/releases/download/v${BEPINEX_VER
 mkdir -p "$LIB"
 
 echo ">> copying game reference DLLs from $PEAK_MANAGED"
-for dll in Photon3Unity3D.dll PhotonRealtime.dll PhotonUnityNetworking.dll UnityEngine.dll UnityEngine.CoreModule.dll; do
+for dll in Photon3Unity3D.dll PhotonRealtime.dll PhotonUnityNetworking.dll \
+           UnityEngine.dll UnityEngine.CoreModule.dll \
+           Assembly-CSharp.dll Zorro.Core.Runtime.dll Utilities.dll Platforms.dll Newtonsoft.Json.dll; do
     cp "$PEAK_MANAGED/$dll" "$LIB/"
 done
 

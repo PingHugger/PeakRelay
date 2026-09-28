@@ -16,3 +16,6 @@ lib/
 tools/dl/
 tools/dotnet/
 tools/dotnet-tools/
+
+# Release output (regenerate with scripts/publish.sh)
+dist/

@@ -1,0 +1,16 @@
+bin/
+obj/
+dist/
+lib/
+references/
+traces/
+tools/
+docs/
+tests/
+PeakRelay.Client/
+PeakRelay.Dedicated/
+PeakRelay.Tools.TestClient/
+PeakRelay.Tools.Trace/
+*.log
+*.md
+.git/
