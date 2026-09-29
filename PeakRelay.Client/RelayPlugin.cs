@@ -21,8 +21,8 @@ namespace PeakRelay.Client;
 ///    menu auto-connect, region swaps, game-server re-auth — resolves to the relay.
 ///    When the relay is disabled the shim stays fully passive (vanilla Photon Cloud).
 /// 2. Observation (only when explicitly enabled): datagram summaries for support.
-/// </summary>    [BepInPlugin(PluginGuid, PluginName, BuildVersion.Version)]
-
+/// </summary>
+[BepInPlugin(PluginGuid, PluginName, BuildVersion.Version)]
 public sealed class RelayPlugin : BaseUnityPlugin
 {
     public const string PluginGuid = "com.peakrelay.client";
