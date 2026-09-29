@@ -1,0 +1,39 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-test:
+    # Game-independent subset: protocol, relay server, installer engine, tests.
+    # The game plugins + WinForms installers need lib/ (proprietary game DLLs,
+    # provisioned only on dev machines / the release workflow) and are built there.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build game-independent projects
+        run: |
+          dotnet build PeakRelay.Protocol/PeakRelay.Protocol.csproj
+          dotnet build PeakRelay.Server/PeakRelay.Server.csproj
+          dotnet build Installer.Core/Installer.Core.csproj
+
+      - name: Test
+        run: dotnet test tests/PeakRelay.Protocol.Tests --nologo
+
+      - name: Publish relay (operator artifact)
+        run: >
+          dotnet publish PeakRelay.Server/PeakRelay.Server.csproj -c Release -f net8.0
+          -o dist/PeakRelay.Server --nologo
+
+      - name: Upload relay artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PeakRelay.Server
+          path: dist/PeakRelay.Server

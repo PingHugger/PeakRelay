@@ -29,13 +29,18 @@ BEPINEX_URL="https://github.com/BepInEx/BepInEx/releases/download/v${BEPINEX_VER
 mkdir -p "$LIB"
 
 echo ">> copying game reference DLLs from $PEAK_MANAGED"
+# Stage in a temp dir first: a copy failure must not silently leave stale lib/
+# DLLs behind for the build to pick up.
+LIBTMP="$(mktemp -d)"
+trap 'rm -rf "$LIBTMP"' EXIT
 for dll in Photon3Unity3D.dll PhotonRealtime.dll PhotonUnityNetworking.dll Photon.dll Zorro.UI.Runtime.dll \
            UnityEngine.dll UnityEngine.CoreModule.dll UnityEngine.UI.dll UnityEngine.UIModule.dll UnityEngine.TextRenderingModule.dll UnityEngine.IMGUIModule.dll \
            UnityEngine.MultiplayerModule.dll \
            Assembly-CSharp.dll Zorro.Core.Runtime.dll Utilities.dll Platforms.dll Newtonsoft.Json.dll \
            com.rlabrecque.steamworks.net.dll SteamCommon.dll; do
-    cp "$PEAK_MANAGED/$dll" "$LIB/"
+    cp "$PEAK_MANAGED/$dll" "$LIBTMP/"
 done
+mv "$LIBTMP"/* "$LIB/"
 
 echo ">> fetching BepInEx $BEPINEX_VERSION"
 TMP="$(mktemp -d)"

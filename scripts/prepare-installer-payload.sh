@@ -11,7 +11,7 @@
 # and its build FAILS if bepinex.zip is missing, so installers cannot build stale.
 # tests/PeakRelay.Protocol.Tests/InstallerPayloadTests.cs re-checks the name contract.
 #
-# Usage: scripts/prepare-installer-payload.sh
+# Usage: scripts/prepare-installer-payload.sh   (env: DOTNET, BUILD_CONFIG, default Debug)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -20,6 +20,10 @@ DOTNET="${DOTNET:-$ROOT/tools/dotnet/dotnet.exe}"
 [ -x "$DOTNET" ] || DOTNET="$(command -v dotnet)"
 [ -n "$DOTNET" ] || { echo "no dotnet found (tools/dotnet or PATH)" >&2; exit 1; }
 export DOTNET_ROOT="$(dirname "$DOTNET")" DOTNET_CLI_TELEMETRY_OPTOUT=1
+
+# Config whose bin/ the plugin DLLs are copied from (release.yml stages the payload
+# AFTER building plugins Release, and passes BUILD_CONFIG=Release).
+BUILD_CONFIG="${BUILD_CONFIG:-Debug}"
 
 PAYLOAD="$ROOT/Installer.Core/Payload/payload"
 rm -rf "$PAYLOAD"
@@ -41,11 +45,11 @@ mkdir -p "$PAYLOAD/doorstop"
 cp /tmp/doorstop/x64/winhttp.dll "$PAYLOAD/doorstop/winhttp.dll"
 
 echo ">> copying plugin DLLs (embedded loose, one resource per DLL)"
-cp PeakRelay.Dedicated/bin/Debug/netstandard2.1/PeakRelay.Dedicated.dll \
-   PeakRelay.Dedicated/bin/Debug/netstandard2.1/PeakRelay.Protocol.dll \
+cp PeakRelay.Dedicated/bin/$BUILD_CONFIG/netstandard2.1/PeakRelay.Dedicated.dll \
+   PeakRelay.Dedicated/bin/$BUILD_CONFIG/netstandard2.1/PeakRelay.Protocol.dll \
    "$PAYLOAD/plugins/Dedicated/"
-cp PeakRelay.Client/bin/Debug/netstandard2.1/PeakRelay.Client.dll \
-   PeakRelay.Client/bin/Debug/netstandard2.1/PeakRelay.Protocol.dll \
+cp PeakRelay.Client/bin/$BUILD_CONFIG/netstandard2.1/PeakRelay.Client.dll \
+   PeakRelay.Client/bin/$BUILD_CONFIG/netstandard2.1/PeakRelay.Protocol.dll \
    "$PAYLOAD/plugins/Client/"
 
 echo ">> publishing relay (framework-dependent, portable)"
