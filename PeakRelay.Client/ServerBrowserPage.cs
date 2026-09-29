@@ -299,7 +299,13 @@ public sealed class ServerBrowserPage : UIPage, IHaveParentPage
         var inputImage = input.gameObject.AddComponent<Image>();
         inputImage.color = new Color(0, 0, 0, 0.6f);
         var field = input.gameObject.AddComponent<InputField>();
-        var fieldText = AddText(input, "", 16, TextAnchor.MiddleLeft);
+        // the text must live on a CHILD rect: a GameObject can hold only one Graphic,
+        // so Text directly on the Image-bearing input rect fails to add (null -> NRE)
+        var fieldTextRect = NewRect("Text", input);
+        Stretch(fieldTextRect);
+        var fieldText = AddText(fieldTextRect, "", 16, TextAnchor.MiddleLeft);
+        fieldText.rectTransform.offsetMin = new Vector2(8, 0);
+        fieldText.rectTransform.offsetMax = new Vector2(-8, 0);
         fieldText.color = Color.white;
         field.textComponent = fieldText;
         field.characterLimit = 32;
@@ -423,7 +429,11 @@ public sealed class ServerBrowserPage : UIPage, IHaveParentPage
         colors.highlightedColor = new Color(0.3f, 0.6f, 0.4f, 1f);
         colors.pressedColor = new Color(0.18f, 0.35f, 0.24f, 1f);
         button.colors = colors;
-        AddText(rect, label, 16, TextAnchor.MiddleCenter);
+        // label on a child rect: a GameObject can hold only one Graphic, so Text directly
+        // on the Image-bearing button rect fails to add (null -> NRE in BuildUi)
+        var labelRect = NewRect("Label", rect);
+        Stretch(labelRect);
+        AddText(labelRect, label, 16, TextAnchor.MiddleCenter);
         button.onClick.AddListener(() => onClick());
     }
 }
