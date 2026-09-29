@@ -32,8 +32,8 @@ namespace PeakRelay.Dedicated;
 /// The vanilla HostState overwrites RoomName unless CurrentPlayer.Tags contains "Player1"
 /// (a play-mode test tag that headless never gets); DedicatedPatches keeps our configured
 /// name instead — config is authoritative (useVanillaName restores stock behavior).
-/// </summary>    [BepInPlugin(PluginGuid, PluginName, BuildVersion.Version)]
-
+/// </summary>
+[BepInPlugin(PluginGuid, PluginName, BuildVersion.Version)]
 [BepInDependency("com.bepinex.plugins.serverconsole", BepInDependency.DependencyFlags.SoftDependency)]
 public sealed class DedicatedPlugin : BaseUnityPlugin
 {
