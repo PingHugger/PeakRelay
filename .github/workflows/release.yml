@@ -18,6 +18,10 @@ jobs:
     # PEAK INSTALL. Cloud runners have no game → the first v0.6.0 attempt failed exactly
     # there. A runner registered on a machine with PEAK installed satisfies this.
     runs-on: [self-hosted, windows]
+    env:
+      # Self-hosted runners have no admin rights: install the SDK into the job's temp
+      # dir instead of C:\Program Files\dotnet (setup-dotnet honors this and PATHs it).
+      DOTNET_INSTALL_DIR: ${{ runner.temp }}\dotnet
     steps:
       - uses: actions/checkout@v4
 
