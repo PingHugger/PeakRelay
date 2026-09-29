@@ -50,7 +50,7 @@ jobs:
           $sha = (Get-FileHash Installer.Core/Payload/payload/doorstop/winhttp.dll -Algorithm SHA256).Hash.ToLower()
           $expected = '8c6cdbc38836dee87e3368f5de1994d7c0ccebf29e4ce7aba3c0981f9375412c'
           if ($sha -ne $expected) {
-            Write-Error "loader sha256 $sha != pinned $expected — if Doorstop 4.5.0 upstream changed, update Doctor.KnownLoaderSha256"
+            throw "loader sha256 $sha does not match pin $expected - if Doorstop 4.5.0 upstream changed, update Doctor.KnownLoaderSha256"
           }
 
       - name: Build installers (self-contained single-file)
