@@ -57,9 +57,10 @@ jobs:
         shell: powershell
         run: |
           $bad = @()
-          Get-ChildItem Installer.Core/Payload/payload/plugins -Recurse -Filter *.dll | ForEach-Object {
+          # Only the plugin ENTRY assemblies carry [BepInPlugin]; Protocol.dll is a library.
+          Get-ChildItem Installer.Core/Payload/payload/plugins -Recurse -Include PeakRelay.Client.dll, PeakRelay.Dedicated.dll | ForEach-Object {
             $text = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($_.FullName))
-            if ($text -notmatch 'BepInPlugin') { $bad += $_.Name }
+            if ($text -notmatch 'BepInPlugin') { $bad += $_.FullName }
           }
           if ($bad.Count -gt 0) { throw ("plugin DLLs without BepInPlugin attribute: " + ($bad -join ', ')) }
 
