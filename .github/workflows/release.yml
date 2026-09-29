@@ -45,7 +45,7 @@ jobs:
           DOTNET="$(which dotnet)" BUILD_CONFIG=Release bash scripts/prepare-installer-payload.sh
 
       - name: Pin the loader (doctor constant must match the shipped winhttp)
-        shell: pwsh
+        shell: powershell
         run: |
           $sha = (Get-FileHash Installer.Core/Payload/payload/doorstop/winhttp.dll -Algorithm SHA256).Hash.ToLower()
           $expected = '8c6cdbc38836dee87e3368f5de1994d7c0ccebf29e4ce7aba3c0981f9375412c'
@@ -66,7 +66,7 @@ jobs:
             -o dist/installers
 
       - name: Collect operator artifacts
-        shell: pwsh
+        shell: powershell
         run: |
           Compress-Archive -Path 'Installer.Core/Payload/payload/relay/*' -DestinationPath PeakRelay.Server.zip -Force
           New-Item -ItemType Directory -Force -Path plugins/PeakRelay.Dedicated, plugins/PeakRelay.Client | Out-Null
