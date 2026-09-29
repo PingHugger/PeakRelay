@@ -19,26 +19,34 @@ public static class ServerDirectoryClient
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(4) };
 
-    /// <summary>GET /api/servers; empty list on any failure (page shows "no servers").</summary>
-    public static List<ServerEntry> Fetch(string relayHost, int relayPort)
+    /// <summary>Why the last Fetch returned an empty list (null on success).</summary>
+    public static string? LastError { get; private set; }
+
+    /// <summary>
+    /// GET /api/servers from the relay's HTTP DIRECTORY port. Empty list on failure, with
+    /// LastError set — the page distinguishes "relay unreachable" from "no servers".
+    /// </summary>
+    public static List<ServerEntry> Fetch(string relayHost, int directoryPort)
     {
         var entries = new List<ServerEntry>();
+        LastError = null;
         try
         {
-            var json = Http.GetStringAsync($"http://{relayHost}:{relayPort}/api/servers").GetAwaiter().GetResult();
+            var json = Http.GetStringAsync($"http://{relayHost}:{directoryPort}/api/servers")
+                .GetAwaiter().GetResult();
             entries = Parse(json);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // unreachable relay → empty list; the page communicates that state
+            LastError = ex.Message;
         }
         return entries;
     }
 
     /// <summary>Coroutine-friendly fetch (page yields until completed).</summary>
-    public static System.Threading.Tasks.Task<List<ServerEntry>> FetchAsync(string relayHost, int relayPort)
+    public static System.Threading.Tasks.Task<List<ServerEntry>> FetchAsync(string relayHost, int directoryPort)
     {
-        return System.Threading.Tasks.Task.Run(() => Fetch(relayHost, relayPort));
+        return System.Threading.Tasks.Task.Run(() => Fetch(relayHost, directoryPort));
     }
 
     private static List<ServerEntry> Parse(string json)

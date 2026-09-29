@@ -179,7 +179,7 @@ public sealed class ServerBrowserPage : UIPage, IHaveParentPage
     private IEnumerator RefreshRoutine()
     {
         if (_status != null) _status.text = "loading server list…";
-        var task = ServerDirectoryClient.FetchAsync(RelayConfig.Host, RelayConfig.Port);
+        var task = ServerDirectoryClient.FetchAsync(RelayConfig.Host, RelayConfig.DirectoryPort);
         while (!task.IsCompleted)
             yield return null;
         var servers = task.GetAwaiter().GetResult();
@@ -188,7 +188,12 @@ public sealed class ServerBrowserPage : UIPage, IHaveParentPage
         if (servers.Count == 0)
         {
             if (_status != null)
-                _status.text = "no servers online — start a dedicated host or check the relay";
+            {
+                // Distinct states: unreachable relay vs. genuinely empty directory.
+                _status.text = ServerDirectoryClient.LastError != null
+                    ? $"relay unreachable at {RelayConfig.Host}:{RelayConfig.DirectoryPort} — is the launcher's relay running?"
+                    : "no servers online — start a dedicated host or check the relay";
+            }
             yield break;
         }
 
