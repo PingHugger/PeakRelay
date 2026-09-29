@@ -5,10 +5,11 @@ Photon PUN2 for its networking; this project keeps PUN2's client logic untouched
 only the transport underneath it, using a public Photon3 extension point
 (`PhotonPeer.SocketImplementationConfig`) instead of binary patching.
 
-Status: **M4/M5/M6 complete** — validated LoadBalancing relay (M1, live against real Photon3
-clients), headless dedicated-server plugin (M4), room-list HTTP + browser UI (M5), release
-packaging (M6). See `docs/protocol-notes.md` for the pinned networking facts and
-`docs/host-guide.md` to run your own server.
+Status: **dedicated hosting verified live, Steam not required** — validated LoadBalancing
+relay (M1, live against real Photon3 clients), headless dedicated-server plugin (M4,
+no-Steam mode live-verified), room-list HTTP + in-game server browser (M5/P1).
+See `docs/protocol-notes.md` for the pinned networking facts, `docs/host-guide.md` to run
+your own server, and `docs/client-guide.md` for the player-side mod.
 
 ## Layout
 
@@ -16,7 +17,7 @@ packaging (M6). See `docs/protocol-notes.md` for the pinned networking facts and
 |---|---|
 | `PeakRelay.Protocol/` | Framing + relay envelope + Photon datagram/command decoder (shared) |
 | `PeakRelay.Server/` | Relay server: LoadBalancing master/game roles, room logic, room-list HTTP sidecar + browser UI |
-| `PeakRelay.Client/` | BepInEx 5 plugin for normal clients: `RelaySocket` (IPhotonSocket) shim |
+| `PeakRelay.Client/` | BepInEx 5 plugin for normal clients: relay transport shim + in-game server browser |
 | `PeakRelay.Dedicated/` | BepInEx 5 plugin: turns stock PEAK into a headless dedicated server (`server.json`, auto-host, retry) |
 | `PeakRelay.Tools.TestClient/` | Headless PUN2 client that runs the full relay scenario (host join + guest join + events + properties) |
 | `PeakRelay.Tools.Trace/` | JSONL trace summarizer (`dotnet run --project ... -- file.jsonl`) |
@@ -38,8 +39,10 @@ scripts/peak-server.sh install
 scripts/peak-server.sh run
 ```
 
-Players join with the room code in PEAK's standard join UI. Full guide incl. Docker and
-troubleshooting: `docs/host-guide.md`.
+Players join with the room code in PEAK's standard join UI or the in-game **SERVERS**
+browser page. Full guide incl. Docker and troubleshooting: `docs/host-guide.md`;
+player-side setup: `docs/client-guide.md`. The headless host runs with Steam closed
+(`noSteam` mode is automatic under `-batchmode -nographics`).
 
 ## Building
 
