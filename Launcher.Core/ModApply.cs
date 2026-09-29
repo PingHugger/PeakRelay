@@ -24,16 +24,23 @@ namespace PeakRelay.Launcher.Core;
 public static class ModApply
 {
     private static readonly byte[] BepInPluginMarker = System.Text.Encoding.ASCII.GetBytes("BepInPlugin");
+
+    /// <summary>Test seam: replace the embedded-payload EnsureBepInEx step in unit tests.</summary>
+    internal static Func<string, List<string>>? EnsureBepInExOverride;
+
     /// <summary>
     /// Applies <paramref name="asset"/> and returns progress/log lines. Config settings are
     /// computed AFTER the plugin files are extracted, so a first-ever install that ADDS a
     /// side also gets its config (server.json / client cfg) written in the same pass.
+    /// When <paramref name="includeDedicated"/> is false the dedicated-host files are not
+    /// installed and any existing ones are REMOVED (player-only install).
     /// </summary>
     public static async Task<List<string>> ApplyAsync(string gameDir, ReleaseAsset asset,
         LauncherState state, string tag,
         Func<ReleaseAsset, string, CancellationToken, Task<long>> download,
         string? host, int port,
         string? room = null, string? password = null, string? hostName = null, int maxPlayers = 20,
+        bool includeDedicated = true,
         CancellationToken token = default)
     {
         var log = new List<string>();
@@ -55,23 +62,44 @@ public static class ModApply
             if (classified.Count == 0)
                 throw new InvalidDataException($"'{asset.Name}' contains no PeakRelay plugin files");
 
+            if (!includeDedicated)
+            {
+                var dedicatedDir = Layout.DedicatedPluginDir(gameDir);
+                classified.RemoveAll(c => c.TargetDir == dedicatedDir);
+            }
+            if (classified.Count == 0)
+                throw new InvalidDataException($"'{asset.Name}' contains no client plugin files (dedicated side excluded)");
+
             foreach (var (entry, targetDir) in classified)
             {
-                // Attribute scan: a plugin DLL without [BepInPlugin] would load as "0
-                // plugins" — silently dead. Reject the whole asset before touching the game.
-                using var pe = entry.Open();
-                using var ms = new MemoryStream();
-                pe.CopyTo(ms);
-                if (ms.ToArray().AsSpan().IndexOf(BepInPluginMarker) < 0)
+                // Attribute scan on the plugin ENTRY assemblies only (Protocol.dll is a
+                // library and legitimately has no [BepInPlugin]). An entry without the
+                // attribute would load as "0 plugins" — silently dead. Reject the asset
+                // before touching the game.
+                var isEntry = entry.Name.Equals("PeakRelay.Client.dll", StringComparison.OrdinalIgnoreCase)
+                              || entry.Name.Equals("PeakRelay.Dedicated.dll", StringComparison.OrdinalIgnoreCase);
+                byte[] dllBytes;
+                using (var pe = entry.Open())
+                {
+                    var ms = new MemoryStream();
+                    pe.CopyTo(ms);
+                    dllBytes = ms.ToArray();
+                }
+                if (isEntry && dllBytes.AsSpan().IndexOf(BepInPluginMarker) < 0)
                     throw new InvalidDataException(
                         $"{entry.Name} has no BepInPlugin attribute - refusing to apply '{asset.Name}'");
+                Directory.CreateDirectory(targetDir);
                 entry.ExtractToFile(Path.Combine(targetDir, entry.Name), overwrite: true);
                 log.Add($"applied {Path.GetFileName(targetDir)}/{entry.Name}");
             }
         }
 
+        if (!includeDedicated)
+            RemoveDedicatedSide(gameDir, log);
+
         // Loader + BepInEx core always from the embedded payload (see class comment).
-        foreach (var line in PluginDeployer.EnsureBepInEx(gameDir))
+        var ensureBepInEx = EnsureBepInExOverride ?? PluginDeployer.EnsureBepInEx;
+        foreach (var line in ensureBepInEx(gameDir))
             log.Add(line);
 
         // Side settings NOW — after extraction, so newly added sides get configured too.
@@ -84,10 +112,10 @@ public static class ModApply
         state.GameDir = gameDir;
         state.InstalledTag = tag;
         state.InstalledAsset = asset.Name;
-        state.ServerSide |= Directory.Exists(Layout.DedicatedPluginDir(gameDir)) &&
-                            File.Exists(Path.Combine(Layout.DedicatedPluginDir(gameDir), "PeakRelay.Dedicated.dll"));
-        state.ClientSide |= Directory.Exists(Layout.ClientPluginDir(gameDir)) &&
-                            File.Exists(Path.Combine(Layout.ClientPluginDir(gameDir), "PeakRelay.Client.dll"));
+        state.ServerSide = Directory.Exists(Layout.DedicatedPluginDir(gameDir)) &&
+                           File.Exists(Path.Combine(Layout.DedicatedPluginDir(gameDir), "PeakRelay.Dedicated.dll"));
+        state.ClientSide = Directory.Exists(Layout.ClientPluginDir(gameDir)) &&
+                           File.Exists(Path.Combine(Layout.ClientPluginDir(gameDir), "PeakRelay.Client.dll"));
         state.Save();
 
         File.Move(tempPath, Path.Combine(cachePath, asset.Name), overwrite: true);
@@ -133,6 +161,16 @@ public static class ModApply
             ? new ClientSettings(relayHost, port)
             : null;
         return (server, client);
+    }
+
+    /// <summary>Removes the dedicated-host plugin files and server.json (player-only mode).</summary>
+    internal static void RemoveDedicatedSide(string gameDir, List<string>? log = null)
+    {
+        var dedicatedDir = Layout.DedicatedPluginDir(gameDir);
+        if (!Directory.Exists(dedicatedDir))
+            return;
+        Directory.Delete(dedicatedDir, recursive: true);
+        log?.Add("removed dedicated-host files (player-only install)");
     }
 
     internal static bool IsPluginEntry(ZipArchiveEntry entry)

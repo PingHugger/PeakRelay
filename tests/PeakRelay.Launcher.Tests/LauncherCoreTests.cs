@@ -311,6 +311,81 @@ public sealed class ModApplyTests : IDisposable
     }
 
     [Fact]
+    public async Task ApplyAsync_client_only_skips_and_removes_dedicated_files()
+    {
+        ModApply.EnsureBepInExOverride = _ => new System.Collections.Generic.List<string> { "(fake bepinex step)" };
+        try
+        {
+            var cache = Path.Combine(_temp, "assets");
+            Directory.CreateDirectory(cache);
+            var zipPath = Path.Combine(cache, "PeakRelay-plugins.zip");
+            using (var zip = new ZipArchive(File.Create(zipPath), ZipArchiveMode.Create))
+            {
+                Add(zip, "PeakRelay.Dedicated/PeakRelay.Dedicated.dll");
+                Add(zip, "PeakRelay.Dedicated/PeakRelay.Protocol.dll");
+                Add(zip, "PeakRelay.Client/PeakRelay.Client.dll");
+                Add(zip, "PeakRelay.Client/PeakRelay.Protocol.dll");
+            }
+            var asset = new ReleaseAsset("PeakRelay-plugins.zip", 1, 1, "unused://");
+            var state = new LauncherState { InstallDedicated = false };
+            var bytes = File.ReadAllBytes(zipPath);
+
+            // Simulate a previous dual install: dedicated files exist and must be removed.
+            var dedicatedDir = Path.Combine(_gameDir, "BepInEx", "plugins", "PeakRelay.Dedicated");
+            Directory.CreateDirectory(dedicatedDir);
+            File.WriteAllText(Path.Combine(dedicatedDir, "PeakRelay.Dedicated.dll"), "old");
+            File.WriteAllText(Path.Combine(dedicatedDir, "server.json"), "{}");
+
+            var log = await ModApply.ApplyAsync(_gameDir, asset, state, "v0.6.4",
+                (_, destination, _) => { File.WriteAllBytes(destination, bytes); return Task.FromResult((long)bytes.Length); },
+                host: "127.0.0.1", port: 5055, includeDedicated: false);
+
+            Assert.True(File.Exists(Path.Combine(_gameDir, "BepInEx", "plugins", "PeakRelay.Client", "PeakRelay.Client.dll")));
+            Assert.False(Directory.Exists(Path.Combine(_gameDir, "BepInEx", "plugins", "PeakRelay.Dedicated")));
+            Assert.False(File.Exists(Path.Combine(_gameDir, "BepInEx", "plugins", "PeakRelay.Dedicated", "server.json")));
+            Assert.False(state.ServerSide);
+            Assert.True(state.ClientSide);
+            Assert.Contains(log, l => l.Contains("removed dedicated-host files"));
+        }
+        finally
+        {
+            ModApply.EnsureBepInExOverride = null;
+        }
+    }
+
+    [Fact]
+    public async Task ApplyAsync_with_dedicated_installs_both_sides_and_server_json()
+    {
+        ModApply.EnsureBepInExOverride = _ => new System.Collections.Generic.List<string> { "(fake bepinex step)" };
+        try
+        {
+            var cache = Path.Combine(_temp, "assets");
+            Directory.CreateDirectory(cache);
+            var zipPath = Path.Combine(cache, "PeakRelay-plugins.zip");
+            using (var zip = new ZipArchive(File.Create(zipPath), ZipArchiveMode.Create))
+            {
+                Add(zip, "PeakRelay.Dedicated/PeakRelay.Dedicated.dll");
+                Add(zip, "PeakRelay.Client/PeakRelay.Client.dll");
+            }
+            var asset = new ReleaseAsset("PeakRelay-plugins.zip", 1, 1, "unused://");
+            var state = new LauncherState { InstallDedicated = true };
+            var bytes = File.ReadAllBytes(zipPath);
+
+            await ModApply.ApplyAsync(_gameDir, asset, state, "v0.6.4",
+                (_, destination, _) => { File.WriteAllBytes(destination, bytes); return Task.FromResult((long)bytes.Length); },
+                host: "127.0.0.1", port: 5055, includeDedicated: true);
+
+            Assert.True(File.Exists(Path.Combine(_gameDir, "BepInEx", "plugins", "PeakRelay.Dedicated", "PeakRelay.Dedicated.dll")));
+            Assert.True(File.Exists(Path.Combine(_gameDir, "BepInEx", "plugins", "PeakRelay.Dedicated", "server.json")));
+            Assert.True(state.ServerSide);
+        }
+        finally
+        {
+            ModApply.EnsureBepInExOverride = null;
+        }
+    }
+
+    [Fact]
     public async Task ApplyAsync_rejects_a_zip_without_plugin_files()
     {
         var cache = Path.Combine(_temp, "cache");
@@ -332,6 +407,8 @@ public sealed class ModApplyTests : IDisposable
     {
         var entry = zip.CreateEntry(name);
         using var payload = entry.Open();
-        payload.Write(new byte[] { 1, 2, 3 }, 0, 3);
+        // ModApply rejects plugin DLLs without the BepInPlugin marker — fixtures carry it.
+        var bytes = System.Text.Encoding.ASCII.GetBytes($"fake dll: BepInPlugin ({name})");
+        payload.Write(bytes, 0, bytes.Length);
     }
 }

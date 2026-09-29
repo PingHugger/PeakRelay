@@ -35,6 +35,7 @@ public static class LauncherCli
         public int HttpPort = 5056;
         public int Max = 20;
         public bool Yes;
+        public bool Dedicated;
         public string Command = "doctor";
     }
 
@@ -48,7 +49,7 @@ public static class LauncherCli
         catch (LauncherUsageException ex)
         {
             Console.Error.WriteLine($"error: {ex.Message}");
-            Console.Error.WriteLine("usage: PeakRelay.Launcher [--dir <path>] [--yes] [doctor|install|update|play|host|selfupdate|set-token|clear-token]");
+            Console.Error.WriteLine("usage: PeakRelay.Launcher [--dir <path>] [--yes] [--dedicated] [doctor|install|update|play|host|selfupdate|set-token|clear-token]");
             return 2;
         }
 
@@ -114,6 +115,7 @@ public static class LauncherCli
                     args.Max = max;
                     break;
                 case "--yes": args.Yes = true; break;
+                case "--dedicated": args.Dedicated = true; break;
                 case "--token": args.Token = Value("--token"); break;
                 default:
                     if (arguments[i].StartsWith('-'))
@@ -220,7 +222,8 @@ public static class LauncherCli
 
         var log = await ModApply.ApplyAsync(gameDir, asset, state, latest.Tag,
             (a, destination, t) => client.DownloadAsync(a, destination, t),
-            args.Host, args.Port, args.Room, args.Password, args.Hostname, args.Max).ConfigureAwait(false);
+            args.Host, args.Port, args.Room, args.Password, args.Hostname, args.Max,
+            includeDedicated: args.Dedicated).ConfigureAwait(false);
         foreach (var line in log)
             Console.WriteLine("  " + line);
 

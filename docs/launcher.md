@@ -16,7 +16,11 @@ every release ships a fresh launcher exe, and `selfupdate` fetches and starts it
 - **Install / Update** — pulls the newest GitHub Release, applies its plugin files to the
   game dir, and (always) re-deploys the Doorstop 4.5.0 loader + BepInEx core **from the
   launcher's own embedded payload** — never from the download. Writes `server.json` /
-  client config for whatever sides are on disk.
+  client config for whatever sides are selected.
+- **Include dedicated-host files** — unchecked by default: players who only want to JOIN
+  rooms get just the client plugin. Check it (or pass `--dedicated`) to also install the
+  dedicated-host files for running your own server; unchecking it again removes them on
+  the next Install.
 - **PLAY** — runs the doctor; if nothing FAILs, starts `PEAK.exe`.
 - **Host relay** — hosts the relay **inside the launcher process** (game TCP 5055, room
   directory http://127.0.0.1:5056/rooms). Click again to stop; ports are released
@@ -36,7 +40,8 @@ Same engine, scriptable (exit codes 0 ok / 1 failure / 2 usage):
 
 ```sh
 PeakRelayLauncher.exe doctor                     # status report (default verb)
-PeakRelayLauncher.exe install [--yes]            # apply latest release (+configs)
+PeakRelayLauncher.exe install [--yes] [--dedicated]  # apply latest release (+configs);
+                                                     # without --dedicated: player-only
 PeakRelayLauncher.exe update                     # only when a newer release exists
 PeakRelayLauncher.exe play                       # doctor gate, then start PEAK
 PeakRelayLauncher.exe host [--port 5055] [--http 5056]
