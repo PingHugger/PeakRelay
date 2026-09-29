@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
+using System.Text;
 using BepInEx;
 using BepInEx.Logging;
 using ExitGames.Client.Photon;
@@ -19,16 +21,17 @@ namespace PeakRelay.Client;
 ///    menu auto-connect, region swaps, game-server re-auth — resolves to the relay.
 ///    When the relay is disabled the shim stays fully passive (vanilla Photon Cloud).
 /// 2. Observation (only when explicitly enabled): datagram summaries for support.
-/// </summary>
-[BepInPlugin(PluginGuid, PluginName, PluginVersion)]
+/// </summary>    [BepInPlugin(PluginGuid, PluginName, BuildVersion.Version)]
+
 public sealed class RelayPlugin : BaseUnityPlugin
 {
     public const string PluginGuid = "com.peakrelay.client";
     public const string PluginName = "PeakRelay";
-    public const string PluginVersion = "0.2.0";
 
-    /// <summary>Build stamp, logged at init: proves which DLL a running game actually loaded.</summary>
-    public const string BuildStamp = "20260929.2";
+    /// <summary>Version from the assembly (Directory.Build.props is the single source).</summary>
+    public static string PluginVersion { get; } =
+        typeof(RelayPlugin).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion.Split('+')[0] ?? BuildVersion.Version;
 
     private static readonly ManualLogSource Log = BepInEx.Logging.Logger.CreateLogSource(PluginName);
     private Harmony? _harmony;
@@ -53,7 +56,7 @@ public sealed class RelayPlugin : BaseUnityPlugin
         // server browser: patches (when the game version matches) + page injection
         GameAPI.Initialize(_harmony);
 
-        Log.LogInfo($"PeakRelay {PluginVersion} build={BuildStamp}: relay={RelayConfig.RelayEnabled} " +
+        Log.LogInfo($"PeakRelay {PluginVersion}: relay={RelayConfig.RelayEnabled} " +
                     $"({RelayConfig.Host}:{RelayConfig.Port}) trace={RelayConfig.TraceEnabled}");
     }
 

@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Reflection;
 using BepInEx;
 using BepInEx.Bootstrap;
 using ExitGames.Client.Photon;
@@ -31,14 +32,18 @@ namespace PeakRelay.Dedicated;
 /// The vanilla HostState overwrites RoomName unless CurrentPlayer.Tags contains "Player1"
 /// (a play-mode test tag that headless never gets); DedicatedPatches keeps our configured
 /// name instead — config is authoritative (useVanillaName restores stock behavior).
-/// </summary>
-[BepInPlugin(PluginGuid, PluginName, PluginVersion)]
+/// </summary>    [BepInPlugin(PluginGuid, PluginName, BuildVersion.Version)]
+
 [BepInDependency("com.bepinex.plugins.serverconsole", BepInDependency.DependencyFlags.SoftDependency)]
 public sealed class DedicatedPlugin : BaseUnityPlugin
 {
     public const string PluginGuid = "com.peakrelay.dedicated";
     public const string PluginName = "PeakRelay.Dedicated";
-    public const string PluginVersion = "0.4.0";
+
+    /// <summary>Version from the assembly (Directory.Build.props is the single source).</summary>
+    public static string PluginVersion { get; } =
+        typeof(DedicatedPlugin).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion.Split('+')[0] ?? BuildVersion.Version;
 
     private Harmony? _harmony;
     private DedicatedConfig _config = new();

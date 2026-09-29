@@ -27,7 +27,7 @@ your own server, and `docs/client-guide.md` for the player-side mod.
 | `Installer.Core/` | shared installer engine: embedded BepInEx/plugin/relay payloads, config writers, verification |
 | `Installer.Server/`, `Installer.Client/` | one-click Windows GUI installers (also scriptable via CLI flags) |
 | `scripts/` | fetch-libs, publish, peak-server (dedicated install/run/status), prepare-installer-payload |
-| `docs/` | protocol-notes, ops-inventory, host-guide, client-guide, installers, building |
+| `docs/` | protocol-notes, ops-inventory, host-guide, client-guide, installers, distribution, building |
 
 ## Quick start
 
@@ -41,9 +41,16 @@ scripts/peak-server.sh install
 scripts/peak-server.sh run
 ```
 
-Windows one-click alternative: run `dist/installers/PeakRelayInstaller-Server.exe` and
-`PeakRelayInstaller-Client.exe` (see `docs/installers.md`). The dedicated host runs with
-Steam closed; players install the client plugin and join via the in-game SERVERS browser.
+**Distribution** — pick your tier (see `docs/distribution.md`):
+
+| Tier | For | Get it | Guide |
+|---|---|---|---|
+| Consumer | players & Windows server owners | one-click installers from GitHub Releases | `docs/installers.md` |
+| Operator | Docker/K8s/service deployments | `PeakRelay.Server.zip` + plugin DLLs from Releases | `docs/distribution.md` |
+
+The dedicated host runs with Steam closed; players install the client plugin and join via
+the in-game SERVERS browser. CI runs on every push; version tags publish both tiers to
+GitHub Releases.
 
 Players join with the room code in PEAK's standard join UI or the in-game **SERVERS**
 browser page. Full guide incl. Docker and troubleshooting: `docs/host-guide.md`;

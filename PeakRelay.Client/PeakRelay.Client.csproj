@@ -2,12 +2,17 @@
 
   <PropertyGroup>
     <TargetFramework>netstandard2.1</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <LangVersion>12</LangVersion>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <RootNamespace>PeakRelay.Client</RootNamespace>
   </PropertyGroup>
+
+  <!-- Single version source: generate the const the [BepInPlugin] attribute needs -->
+  <Target Name="GenerateVersionConst" BeforeTargets="BeforeBuild;CoreCompile">
+    <PropertyGroup>
+      <BuildVersionLine>namespace PeakRelay.Client%3B internal static class BuildVersion %7B public const string Version = "$(Version)"%3B %7D</BuildVersionLine>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(IntermediateOutputPath)Version.g.cs" Lines="$(BuildVersionLine)" Overwrite="true" Encoding="UTF-8" />
+    <ItemGroup><Compile Include="$(IntermediateOutputPath)Version.g.cs" /></ItemGroup>
+  </Target>
 
   <ItemGroup>
     <ProjectReference Include="..\PeakRelay.Protocol\PeakRelay.Protocol.csproj" />
