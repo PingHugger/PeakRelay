@@ -35,8 +35,8 @@ public static class LauncherCli
         public int HttpPort = 5056;
         public int Max = 20;
         public bool Yes;
-        public bool Dedicated;
         public string Command = "doctor";
+        public string? ServerDir;
     }
 
     public static async Task<int> Run(string[] arguments)
@@ -49,7 +49,7 @@ public static class LauncherCli
         catch (LauncherUsageException ex)
         {
             Console.Error.WriteLine($"error: {ex.Message}");
-            Console.Error.WriteLine("usage: PeakRelay.Launcher [--dir <path>] [--yes] [--dedicated] [doctor|install|update|play|host|selfupdate|set-token|clear-token]");
+            Console.Error.WriteLine("usage: PeakRelay.Launcher [--dir <path>] [--yes] [--server-dir <path>] [doctor|install|update|play|host|selfupdate|set-token|clear-token|server-sync|server-start|server-stop]");
             return 2;
         }
 
@@ -65,6 +65,9 @@ public static class LauncherCli
                 "selfupdate" => await SelfUpdateAsync().ConfigureAwait(false),
                 "set-token" => await SetTokenAsync(args).ConfigureAwait(false),
                 "clear-token" => await ClearTokenAsync().ConfigureAwait(false),
+                "server-sync" => await ServerSyncAsync(args).ConfigureAwait(false),
+                "server-start" => await ServerStartAsync(args).ConfigureAwait(false),
+                "server-stop" => await ServerStopAsync().ConfigureAwait(false),
                 _ => throw new LauncherUsageException($"unknown command '{args.Command}'"),
             };
         }
@@ -115,7 +118,7 @@ public static class LauncherCli
                     args.Max = max;
                     break;
                 case "--yes": args.Yes = true; break;
-                case "--dedicated": args.Dedicated = true; break;
+                case "--server-dir": args.ServerDir = Value("--server-dir"); break;
                 case "--token": args.Token = Value("--token"); break;
                 default:
                     if (arguments[i].StartsWith('-'))
@@ -134,6 +137,44 @@ public static class LauncherCli
     private static string ResolveDir(Args args, LauncherState state) =>
         args.Dir ?? (string.IsNullOrWhiteSpace(state.GameDir) ? GameLocator.FindDefaultGameDir() : state.GameDir)
         ?? throw new LauncherUsageException("no --dir given, no saved game dir, and no PEAK install found");
+
+    /// <summary>Creates or refreshes the dedicated-server game copy.</summary>
+    private static async Task<int> ServerSyncAsync(Args args)
+    {
+        var state = LauncherState.Load();
+        var gameDir = ResolveDir(args, state);
+        var serverDir = args.ServerDir ?? (string.IsNullOrWhiteSpace(state.ServerDir)
+            ? ServerCopy.DefaultServerDir : state.ServerDir);
+        var log = await ServerCopy.SyncAsync(gameDir, serverDir).ConfigureAwait(false);
+        foreach (var line in log)
+            Console.WriteLine("  " + line);
+        state.ServerDir = serverDir;
+        state.Save();
+        Console.WriteLine($"server copy ready: {Path.Combine(serverDir, ServerCopy.ServerExeName)}");
+        return 0;
+    }
+
+    private static Task<int> ServerStartAsync(Args args)
+    {
+        var state = LauncherState.Load();
+        var serverDir = args.ServerDir ?? (string.IsNullOrWhiteSpace(state.ServerDir)
+            ? ServerCopy.DefaultServerDir : state.ServerDir);
+        if (ServerCopy.IsRunning())
+        {
+            Console.WriteLine("dedicated server already running");
+            return Task.FromResult(0);
+        }
+        var proc = ServerCopy.Start(serverDir);
+        Console.WriteLine($"PeakServer started (pid {proc.Id}) from {serverDir}");
+        return Task.FromResult(0);
+    }
+
+    private static Task<int> ServerStopAsync()
+    {
+        ServerCopy.Stop();
+        Console.WriteLine("dedicated server stopped");
+        return Task.FromResult(0);
+    }
 
     /// <summary>Stores a GitHub token for private-repo channels. Env var still wins.</summary>
     private static Task<int> SetTokenAsync(Args args)
@@ -222,8 +263,7 @@ public static class LauncherCli
 
         var log = await ModApply.ApplyAsync(gameDir, asset, state, latest.Tag,
             (a, destination, t) => client.DownloadAsync(a, destination, t),
-            args.Host, args.Port, args.Room, args.Password, args.Hostname, args.Max,
-            includeDedicated: args.Dedicated).ConfigureAwait(false);
+            args.Host, args.Port).ConfigureAwait(false);
         foreach (var line in log)
             Console.WriteLine("  " + line);
 

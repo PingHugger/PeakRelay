@@ -25,6 +25,15 @@ every release ships a fresh launcher exe, and `selfupdate` fetches and starts it
 - **Host relay** — hosts the relay **inside the launcher process** (game TCP 5055, room
   directory http://127.0.0.1:5056/rooms). Click again to stop; ports are released
   immediately. Friends join via the in-game SERVERS browser.
+- **Set up / Start / Stop server** — the dedicated server runs from its **own copy** of
+  the game (default `%LOCALAPPDATA%\PeakRelay\server`, ~2 GB). First click mirrors the
+  game install with `robocopy /MIR` (BepInEx excluded, deployed fresh), renames
+  `PEAK.exe → PeakServer.exe` (+ `PEAK_Data → PeakServer_Data`, which Unity requires to
+  match the exe name), and deploys **dedicated-only** mod files + `server.json`. Later
+  clicks Start/Stop the `PeakServer.exe` process (headless: `-batchmode -nographics`);
+  the log lands in `%LOCALAPPDATA%\PeakRelay\logs\peakserver.log`. The doctor warns when
+  the game updated since the last sync (the button then reads **Update server copy**).
+  The play install itself stays player-only — dedicated files are removed from it.
 
 ## Loader integrity (why the doctor is byte-exact)
 
@@ -45,6 +54,9 @@ PeakRelayLauncher.exe install [--yes] [--dedicated]  # apply latest release (+co
 PeakRelayLauncher.exe update                     # only when a newer release exists
 PeakRelayLauncher.exe play                       # doctor gate, then start PEAK
 PeakRelayLauncher.exe host [--port 5055] [--http 5056]
+PeakRelayLauncher.exe server-sync [--server-dir <path>]   # create/refresh the server copy
+PeakRelayLauncher.exe server-start [--server-dir <path>]  # headless PeakServer.exe
+PeakRelayLauncher.exe server-stop                         # stop every PeakServer.exe
 PeakRelayLauncher.exe selfupdate                 # download + start the newest launcher
 PeakRelayLauncher.exe set-token [--token <pat>]  # store a private-repo read token
 PeakRelayLauncher.exe clear-token                # remove the stored token

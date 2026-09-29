@@ -77,15 +77,15 @@ public static class Doctor
         var clientMarker = Path.Combine(Layout.ClientPluginDir(gameDir), "PeakRelay.Client.dll");
         var hasDedicated = File.Exists(dedicatedMarker);
         var hasClient = File.Exists(clientMarker);
+        // The play install is player-only by design; dedicated files here are leftovers.
         if (hasDedicated)
-            checks.Add(new Check(CheckStatus.Pass, "Dedicated plugin", dedicatedMarker));
-        else if (string.Equals(state.GameDir, gameDir, StringComparison.OrdinalIgnoreCase) && !state.InstallDedicated)
-            checks.Add(new Check(CheckStatus.Pass, "Dedicated plugin",
-                "not installed (player-only selection) — join-only is fully supported."));
-        else
             checks.Add(new Check(CheckStatus.Warn, "Dedicated plugin",
-                "PeakRelay.Dedicated.dll not found — hosting not available from this install.",
-                "Enable 'dedicated host files' and Install to add hosting."));
+                "dedicated-host files inside the play install (legacy layout) — Install removes them; " +
+                "hosting runs from the separate server copy.",
+                "Run Install (player-only) and 'server sync' for hosting."));
+        else
+            checks.Add(new Check(CheckStatus.Pass, "Dedicated plugin",
+                "not installed here (player-only play install) — hosting runs from the server copy."));
         if (hasClient)
             checks.Add(new Check(CheckStatus.Pass, "Client plugin", clientMarker));
         else
@@ -125,6 +125,25 @@ public static class Doctor
                 ? "GitHub token configured (env or token file)."
                 : "anonymous access (fine for public repos; a private repo needs a token).",
             hasToken ? null : "If the repo is private: 'PeakRelayLauncher.exe set-token'."));
+
+        // Dedicated-server copy.
+        var serverDir = string.IsNullOrWhiteSpace(state.ServerDir)
+            ? ServerCopy.DefaultServerDir : state.ServerDir;
+        if (!ServerCopy.LooksLikeServerCopy(serverDir))
+        {
+            checks.Add(new Check(CheckStatus.Pass, "Server copy",
+                $"none yet ({serverDir}) — create one with 'server sync' to host your own server."));
+        }
+        else if (!ServerCopy.StampIsCurrent(gameDir, serverDir))
+        {
+            checks.Add(new Check(CheckStatus.Warn, "Server copy",
+                "the game updated since the last server sync — the copy runs the OLD game version.",
+                "Run 'server sync' to refresh it."));
+        }
+        else
+        {
+            checks.Add(new Check(CheckStatus.Pass, "Server copy", $"{serverDir} (up to date)."));
+        }
 
         return checks;
     }

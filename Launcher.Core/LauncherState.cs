@@ -11,11 +11,10 @@ public sealed class LauncherState
     public bool ClientSide { get; set; }
 
     /// <summary>
-    /// Whether Install also deploys the dedicated-host files (server side). Default false:
-    /// most players only want to join, not host. When false, Install REMOVES any dedicated
-    /// files a previous install left behind.
+    /// Where the dedicated-server game copy lives (PeakServer.exe). Empty = default
+    /// %LOCALAPPDATA%\PeakRelay\server. The main install stays player-only.
     /// </summary>
-    public bool InstallDedicated { get; set; }
+    public string ServerDir { get; set; } = "";
 
     /// <summary>What the last ModApply installed (release tag + asset), for update checks.</summary>
     public string? InstalledTag { get; set; }
