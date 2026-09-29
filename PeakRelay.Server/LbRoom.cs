@@ -19,6 +19,8 @@ public sealed class LbRoom
 
     public string Name { get; }
 
+    private readonly object _sync = new();
+
     /// <summary>Actors by number; 1-based, numbers reused as gaps close.</summary>
     public SortedDictionary<int, LbPeer> Actors { get; } = new();
 
@@ -130,5 +132,50 @@ public sealed class LbRoom
                 continue;
             actor.EnqueueLbEvent(eventBytes);
         }
+    }
+
+    // ------------------------------------------------------------------ event cache
+
+    /// <summary>
+    /// Photon Cloud's room event cache (OpRaiseEvent param 247): events raised with
+    /// AddToRoomCache(Global) are stored by the server and replayed to every later joiner.
+    /// PUN2's PhotonNetwork.Instantiate depends on this — without replay a joiner spawns
+    /// into a world without any of the host's networked objects (frozen/dead character).
+    /// We store the raw P16 event bytes exactly as raised; on join they are re-sent as-is
+    /// (the sender actorNr inside still points at the original actor, which is what the
+    /// client's PhotonView ownership logic expects).
+    /// </summary>
+    private sealed record CachedEvent(int SenderActorNr, byte EventCode, byte[] Bytes);
+
+    private readonly List<CachedEvent> _eventCache = new();
+
+    public int CacheCount { get { lock (_sync) return _eventCache.Count; } }
+
+    /// <summary>Store an already-encoded event in the room cache.</summary>
+    public void CacheEvent(int senderActorNr, byte eventCode, byte[] eventBytes)
+    {
+        lock (_sync)
+            _eventCache.Add(new CachedEvent(senderActorNr, eventCode, eventBytes));
+    }
+
+    /// <summary>Replays every cached event to one actor (Photon Cloud join semantics).</summary>
+    public void ReplayCacheTo(LbPeer joiner)
+    {
+        List<CachedEvent> snapshot;
+        lock (_sync)
+            snapshot = new List<CachedEvent>(_eventCache);
+        foreach (var entry in snapshot)
+            joiner.EnqueueLbEvent(entry.Bytes);
+    }
+
+    /// <summary>
+    /// RemoveFromRoomCache (cache op 6): drop cached events raised by
+    /// <paramref name="senderActorNr"/> with the given event code (0 = any code).
+    /// </summary>
+    public void RemoveCachedEvents(int senderActorNr, byte eventCode)
+    {
+        lock (_sync)
+            _eventCache.RemoveAll(e => e.SenderActorNr == senderActorNr &&
+                                       (eventCode == 0 || e.EventCode == eventCode));
     }
 }
