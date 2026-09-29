@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>12</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RootNamespace>PeakRelay.Launcher</RootNamespace>
+    <AssemblyName>PeakRelayLauncher</AssemblyName>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Launcher.Core\Launcher.Core.csproj" />
+  </ItemGroup>
+
+  <!-- Installers must never build stale: fail early if the payload was not staged.
+       (The guard lives here, not on Installer.Core — CI builds that project standalone.) -->
+  <Target Name="CheckPayloadPresent" BeforeTargets="PrepareForBuild">
+    <Error Condition="!Exists('..\Installer.Core\Payload\payload\bepinex.zip')"
+           Text="Installer payload missing: Installer.Core/Payload/payload/bepinex.zip (run scripts/prepare-installer-payload.sh first)" />
+  </Target>
+
+  <!-- Same embedded payload as the installers: loader + BepInEx + relay zip. The launcher
+       applies release assets itself but NEVER takes loader/BepInEx bytes from a download. -->
+  <ItemGroup Condition="Exists('..\Installer.Core\Payload\payload\bepinex.zip')">
+    <EmbeddedResource Include="..\Installer.Core\Payload\payload\bepinex.zip"
+                      LogicalName="PeakRelay.Installer.Payload.bepinex.zip" />
+    <EmbeddedResource Include="..\Installer.Core\Payload\payload\doorstop\winhttp.dll"
+                      LogicalName="PeakRelay.Installer.Payload.doorstop.winhttp.dll" />
+    <EmbeddedResource Include="..\Installer.Core\Payload\payload\relay.zip"
+                      LogicalName="PeakRelay.Installer.Payload.relay.relay.zip" />
+    <EmbeddedResource Include="..\Installer.Core\Payload\payload\plugins\Dedicated\*.dll"
+                      LogicalName="PeakRelay.Installer.Payload.plugins.Dedicated.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\Installer.Core\Payload\payload\plugins\Client\*.dll"
+                      LogicalName="PeakRelay.Installer.Payload.plugins.Client.%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <!-- single-file packaging: PDBs stay out of the exe, no ilc PDB is produced -->
+  <PropertyGroup>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+</Project>

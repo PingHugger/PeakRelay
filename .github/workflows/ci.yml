@@ -23,9 +23,12 @@ jobs:
           dotnet build PeakRelay.Protocol/PeakRelay.Protocol.csproj
           dotnet build PeakRelay.Server/PeakRelay.Server.csproj
           dotnet build Installer.Core/Installer.Core.csproj
+          dotnet build Launcher.Core/Launcher.Core.csproj
 
       - name: Test
-        run: dotnet test tests/PeakRelay.Protocol.Tests --nologo
+        run: |
+          dotnet test tests/PeakRelay.Protocol.Tests --nologo
+          dotnet test tests/PeakRelay.Launcher.Tests --nologo
 
       - name: Publish relay (operator artifact)
         run: >

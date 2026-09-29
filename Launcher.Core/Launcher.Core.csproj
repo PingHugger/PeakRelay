@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>PeakRelay.Launcher.Core</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Installer.Core\Installer.Core.csproj" />
+    <ProjectReference Include="..\PeakRelay.Server\PeakRelay.Server.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="PeakRelay.Launcher.Tests" />
+  </ItemGroup>
+
+</Project>

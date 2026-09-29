@@ -24,6 +24,12 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Installer.Server", "Install
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Installer.Client", "Installer.Client\Installer.Client.csproj", "{13BA1A89-4637-4ADE-998C-7AD965416CDB}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Launcher.Core", "Launcher.Core\Launcher.Core.csproj", "{3A3B6E83-A1E1-4718-B5B6-5B45348CE3ED}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PeakRelay.Launcher", "Launcher\PeakRelay.Launcher.csproj", "{7DAC7B12-4488-48D6-A4D1-8D4CB52B9123}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PeakRelay.Launcher.Tests", "tests\PeakRelay.Launcher.Tests\PeakRelay.Launcher.Tests.csproj", "{68550051-A948-411C-B634-77D8ABF7D0B5}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -70,8 +76,21 @@ Global
 		{13BA1A89-4637-4ADE-998C-7AD965416CDB}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{13BA1A89-4637-4ADE-998C-7AD965416CDB}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{13BA1A89-4637-4ADE-998C-7AD965416CDB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3A3B6E83-A1E1-4718-B5B6-5B45348CE3ED}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3A3B6E83-A1E1-4718-B5B6-5B45348CE3ED}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3A3B6E83-A1E1-4718-B5B6-5B45348CE3ED}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3A3B6E83-A1E1-4718-B5B6-5B45348CE3ED}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7DAC7B12-4488-48D6-A4D1-8D4CB52B9123}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7DAC7B12-4488-48D6-A4D1-8D4CB52B9123}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7DAC7B12-4488-48D6-A4D1-8D4CB52B9123}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7DAC7B12-4488-48D6-A4D1-8D4CB52B9123}.Release|Any CPU.Build.0 = Release|Any CPU
+		{68550051-A948-411C-B634-77D8ABF7D0B5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{68550051-A948-411C-B634-77D8ABF7D0B5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{68550051-A948-411C-B634-77D8ABF7D0B5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{68550051-A948-411C-B634-77D8ABF7D0B5}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{A1000003-0000-0000-0000-000000000001} = {A1000002-0000-0000-0000-000000000001}
+		{68550051-A948-411C-B634-77D8ABF7D0B5} = {A1000002-0000-0000-0000-000000000001}
 	EndGlobalSection
 EndGlobal

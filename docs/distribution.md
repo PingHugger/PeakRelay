@@ -8,6 +8,8 @@ CI on every push, tagged releases on GitHub). Pick the tier that matches who is 
 **Who:** players and server owners on Windows who want one-click setup.
 
 **Artifacts** (attached to each GitHub Release):
+- `PeakRelayLauncher.exe` — the all-in-one launcher: status doctor, install/update from
+  Releases, play, in-process relay hosting, `selfupdate` (see `docs/launcher.md`)
 - `PeakRelayInstaller-Client.exe` — game-dir picker, deploys BepInEx + Doorstop 4.5.0
   loader + client plugin + config
 - `PeakRelayInstaller-Server.exe` — same + dedicated plugin + `server.json`, optional
