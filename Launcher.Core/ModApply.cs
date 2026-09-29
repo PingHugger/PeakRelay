@@ -23,6 +23,7 @@ namespace PeakRelay.Launcher.Core;
 /// </summary>
 public static class ModApply
 {
+    private static readonly byte[] BepInPluginMarker = System.Text.Encoding.ASCII.GetBytes("BepInPlugin");
     /// <summary>Applies <paramref name="asset"/> and returns progress/log lines.</summary>
     public static async Task<List<string>> ApplyAsync(string gameDir, ReleaseAsset asset,
         LauncherState state, string tag,
@@ -51,9 +52,15 @@ public static class ModApply
 
             foreach (var (entry, targetDir) in classified)
             {
-                Directory.CreateDirectory(targetDir);
-                var target = Path.Combine(targetDir, entry.Name);
-                entry.ExtractToFile(target, overwrite: true);
+                // Attribute scan: a plugin DLL without [BepInPlugin] would load as "0
+                // plugins" — silently dead. Reject the whole asset before touching the game.
+                using var pe = entry.Open();
+                using var ms = new MemoryStream();
+                pe.CopyTo(ms);
+                if (ms.ToArray().AsSpan().IndexOf(BepInPluginMarker) < 0)
+                    throw new InvalidDataException(
+                        $"{entry.Name} has no BepInPlugin attribute - refusing to apply '{asset.Name}'");
+                entry.ExtractToFile(Path.Combine(targetDir, entry.Name), overwrite: true);
                 log.Add($"applied {Path.GetFileName(targetDir)}/{entry.Name}");
             }
         }

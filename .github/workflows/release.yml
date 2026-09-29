@@ -53,6 +53,16 @@ jobs:
             throw "loader sha256 $sha does not match pin $expected - if Doorstop 4.5.0 upstream changed, update Doctor.KnownLoaderSha256"
           }
 
+      - name: Plugins must carry BepInPlugin (attribute regression gate)
+        shell: powershell
+        run: |
+          $bad = @()
+          Get-ChildItem Installer.Core/Payload/payload/plugins -Recurse -Filter *.dll | ForEach-Object {
+            $text = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($_.FullName))
+            if ($text -notmatch 'BepInPlugin') { $bad += $_.Name }
+          }
+          if ($bad.Count -gt 0) { throw ("plugin DLLs without BepInPlugin attribute: " + ($bad -join ', ')) }
+
       - name: Build installers (self-contained single-file)
         run: |
           dotnet publish Installer.Server/Installer.Server.csproj -c Release -r win-x64 `
