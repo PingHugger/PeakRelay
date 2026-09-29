@@ -12,10 +12,8 @@ references/
 # game or framework binaries
 lib/
 
-# Portable SDK + local dotnet-tools (downloaded, not committed)
-tools/dl/
-tools/dotnet/
-tools/dotnet-tools/
+# Local toolchain (portable SDKs, extra runtimes, downloaded archives, dotnet-tools)
+tools/
 
 # Installer embed payload (regenerate with scripts/prepare-installer-payload.sh)
 Installer.Core/Payload/payload/
