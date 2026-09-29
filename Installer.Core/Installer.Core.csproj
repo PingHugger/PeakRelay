@@ -11,14 +11,13 @@
     LogicalName is derived from the file path (Payload/payload/** ->
     PeakRelay.Installer.Payload.*), which is exactly what PluginDeployer.OpenPayload
     computes — a rename moves both sides together. The payload is produced by
-    scripts/prepare-installer-payload.sh; a missing bepinex.zip fails this build, so
-    installers cannot build stale.
-  -->
-  <Target Name="CheckPayloadPresent" BeforeTargets="PrepareForBuild">
-    <Error Condition="!Exists('Payload/payload/bepinex.zip')"
-           Text="Installer payload missing: Payload/payload/bepinex.zip (run scripts/prepare-installer-payload.sh first)" />
-  </Target>
+    scripts/prepare-installer-payload.sh.
 
+    NOTE: no build-time payload guard here — Installer.Core is built standalone by CI
+    (no payload on fresh runners; the payload tests self-skip when absent). The
+    "installers cannot build stale" guard lives on the installer projects, which are
+    only ever built to ship.
+  -->
   <ItemGroup>
     <EmbeddedResource Include="Payload/payload/bepinex.zip"
                       LogicalName="PeakRelay.Installer.Payload.bepinex.zip" />

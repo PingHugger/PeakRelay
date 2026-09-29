@@ -153,7 +153,8 @@ tools/dotnet/dotnet.exe publish Installer.Client/Installer.Client.csproj \
     -o dist/installers
 ```
 
-Guards baked in: building without the payload **fails** (`CheckPayloadPresent` target), and
+Guards baked in: building an installer without the payload **fails** (`CheckPayloadPresent`
+target on each installer project; CI's standalone Installer.Core build skips it), and
 `tests/…/InstallerPayloadTests.cs` proves every embedded resource is named by the code and
 vice versa — stale installers cannot ship. The exes embed everything (BepInEx zip, plugin
 DLLs, relay publish); both GUI wizards *and* a scriptable CLI live inside:
@@ -170,7 +171,7 @@ missing value, out-of-range `--max` 1–100 / `--port` 1–65535). Without `--di
 ## 8. Tests & verification
 
 ```sh
-tools/dotnet/dotnet.exe test tests/PeakRelay.Protocol.Tests     # 18 tests incl. payload contract
+tools/dotnet/dotnet.exe test tests/PeakRelay.Protocol.Tests     # 19 tests incl. payload contract
 dotnet run --project PeakRelay.Tools.TestClient                 # live 8-step relay scenario
 PEAKRELAY_HTTPPORT=5056 dotnet run --project PeakRelay.Tools.TestClient
 ```

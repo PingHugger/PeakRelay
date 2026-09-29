@@ -18,6 +18,13 @@
     <ProjectReference Include="..\Installer.Core\Installer.Core.csproj" />
   </ItemGroup>
 
+  <!-- Installers must never build stale: fail early if the payload was not staged.
+       (The guard lives here, not on Installer.Core — CI builds that project standalone.) -->
+  <Target Name="CheckPayloadPresent" BeforeTargets="PrepareForBuild">
+    <Error Condition="!Exists('..\Installer.Core\Payload\payload\bepinex.zip')"
+           Text="Installer payload missing: Installer.Core/Payload/payload/bepinex.zip (run scripts/prepare-installer-payload.sh first)" />
+  </Target>
+
   <!-- single-file packaging: PDBs stay out of the exe, no ilc PDB is produced -->
   <PropertyGroup>
     <DebugType>embedded</DebugType>

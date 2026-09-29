@@ -72,7 +72,8 @@ dotnet publish Installer.Client/Installer.Client.csproj -c Release -r win-x64 \
 
 The payload (BepInEx zip, plugin DLLs, relay publish output — staged under
 `Installer.Core/Payload/payload/`) is embedded into Installer.Core at build time;
-the build fails if the payload is missing, and
+building an installer without the payload fails (`CheckPayloadPresent` target on each
+installer project; CI's standalone Installer.Core build skips it), and
 `tests/…/InstallerPayloadTests.cs` proves every embedded resource is named by the code
 (and vice versa), so stale or half-staged payloads cannot ship.
 
