@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text;
 
 namespace PeakRelay.Installer.Core;
@@ -12,11 +11,9 @@ public sealed class InstallRequest
     public string? RelayStageDir { get; init; }
 }
 
-/// <summary>Executes an InstallRequest; GUI shows the same steps in a progress list.</summary>
+/// <summary>Executes an InstallRequest; the GUI shows the same steps in a progress list.</summary>
 public static class InstallRunner
 {
-    public sealed record Step(string Text);
-
     /// <summary>Runs the install, invoking onStep for each completed action (returns step log).</summary>
     public static List<string> Run(InstallRequest request, Action<string>? onStep = null)
     {
@@ -67,18 +64,24 @@ public static class InstallRunner
     }
 }
 
+/// <summary>Bad CLI input: message goes to stderr, process exits 2, nothing is installed.</summary>
+public sealed class UsageException : Exception
+{
+    public UsageException(string message) : base(message) { }
+}
+
 /// <summary>
-/// CLI mode for both installers: same InstallRunner path as the GUI. Supported flags:
-///   --dir <path>       PEAK install root (required unless --find)
-///   --host <host>      relay host (client: config; server: where to find the relay)
-///   --port <port>      relay port (default 5055)
-///   --room <code>      server only: room code (default DBPEAK)
-///   --name <text>      server only: display name
-///   --max <n>          server only: max players (default 20)
-///   --password <text>  server only: room password (default none)
-///   --stage-relay <d>  server only: also copy relay files into <d>
-///   --hostname <text>  server only: host player name without Steam (default DedicatedHost)
-///   --yes              non-interactive; fails instead of prompting
+/// CLI mode for both installers: the same InstallRunner path as the GUI. Supported flags:
+///   --dir &lt;path&gt;       PEAK install root (required unless a default install is found)
+///   --host &lt;host&gt;      relay host (client: config; server: where to find the relay)
+///   --port &lt;port&gt;      relay port (default 5055)
+///   --room &lt;code&gt;      server only: room code (default DBPEAK)
+///   --name &lt;text&gt;      server only: display name
+///   --max &lt;n&gt;          server only: max players (default 20, GUI range 1-100)
+///   --password &lt;text&gt;  server only: room password (default none)
+///   --stage-relay &lt;d&gt;  server only: also copy relay files into &lt;d&gt;
+///   --hostname &lt;text&gt;  server only: host player name without Steam (default DedicatedHost)
+///   --yes              non-interactive; reserved (input never prompts)
 /// </summary>
 public static class Cli
 {
@@ -86,22 +89,27 @@ public static class Cli
     {
         public string? Dir, Host, Room, Name, Password, StageRelay, Hostname;
         public int Port = 5055;
-        public bool Yes, MaxSet;
+        public bool MaxSet;
         public int Max = 20;
+        public bool Help;
     }
 
-    public static Args? Parse(string[] arguments, TextWriter errors)
+    private const int MinMaxPlayers = 1;
+    private const int MaxMaxPlayers = 100; // same range as the GUI's NumericUpDown
+
+    /// <summary>
+    /// Parses the flags. Throws <see cref="UsageException"/> on anything a script must not
+    /// silently misread (unknown flag, missing flag value, unparsable/out-of-range number).
+    /// </summary>
+    public static Args Parse(string[] arguments)
     {
         var args = new Args();
         for (var i = 0; i < arguments.Length; i++)
         {
             string Value(string flag)
             {
-                if (i + 1 >= arguments.Length)
-                {
-                    errors.WriteLine($"missing value for {flag}");
-                    return null!;
-                }
+                if (i + 1 >= arguments.Length || arguments[i + 1].StartsWith('-'))
+                    throw new UsageException($"missing value for {flag}");
                 return arguments[++i];
             }
 
@@ -109,40 +117,57 @@ public static class Cli
             {
                 case "--dir": args.Dir = Value("--dir"); break;
                 case "--host": args.Host = Value("--host"); break;
-                case "--port": int.TryParse(Value("--port"), out args.Port); break;
+                case "--port":
+                    if (!int.TryParse(Value("--port"), out var port) || port is < 1 or > 65535)
+                        throw new UsageException("--port must be a TCP port (1-65535)");
+                    args.Port = port;
+                    break;
                 case "--room": args.Room = Value("--room"); break;
                 case "--name": args.Name = Value("--name"); break;
                 case "--password": args.Password = Value("--password"); break;
-                case "--max": if (int.TryParse(Value("--max"), out var max)) { args.Max = max; args.MaxSet = true; } break;
+                case "--max":
+                    if (!int.TryParse(Value("--max"), out var max))
+                        throw new UsageException("--max must be an integer");
+                    if (max is < MinMaxPlayers or > MaxMaxPlayers)
+                        throw new UsageException($"--max must be {MinMaxPlayers}-{MaxMaxPlayers}");
+                    args.Max = max;
+                    args.MaxSet = true;
+                    break;
                 case "--stage-relay": args.StageRelay = Value("--stage-relay"); break;
                 case "--hostname": args.Hostname = Value("--hostname"); break;
-                case "--yes": args.Yes = true; break;
-                case "-h" or "--help":
-                    return null;
+                case "--yes": break; // accepted for script compatibility; input never prompts
+                case "-h" or "--help": args.Help = true; break;
                 default:
-                    errors.WriteLine($"unknown argument '{arguments[i]}' (see --help)");
-                    return args;
+                    throw new UsageException($"unknown argument '{arguments[i]}'");
             }
         }
         return args;
     }
 
-    /// <summary>Runs CLI mode. Returns process exit code.</summary>
+    /// <summary>Runs CLI mode. Exit codes: 0 install verified, 1 install failed, 2 usage error.</summary>
     public static int Run(string[] arguments, bool serverMode)
     {
-        if (arguments.Contains("-h") || arguments.Contains("--help") || arguments.Length == 0)
+        Args args;
+        try
         {
+            args = Parse(arguments);
+        }
+        catch (UsageException ex)
+        {
+            Console.Error.WriteLine($"usage error: {ex.Message}");
             PrintHelp(serverMode);
             return 2;
         }
 
-        var errors = Console.Error;
-        var args = Parse(arguments, errors);
-        if (args == null || (arguments.Length > 0 && args.Dir == null && !arguments.Contains("--dir")))
+        if (args.Help)
         {
-            // Parse printed an error for unknown flags; only continue when --dir came through
-            if (args == null)
-                return 2;
+            PrintHelp(serverMode);
+            return 0;
+        }
+        if (arguments.Length == 0)
+        {
+            PrintHelp(serverMode);
+            return 2;
         }
 
         try
@@ -175,9 +200,7 @@ public static class Cli
             }
 
             Console.WriteLine($"PeakRelay {(serverMode ? "server" : "client")} installer (CLI)");
-            foreach (var line in InstallRunner.Run(request, s => Console.WriteLine("  " + s)))
-            {
-            }
+            InstallRunner.Run(request, s => Console.WriteLine("  " + s));
             Console.WriteLine();
             var failed = false;
             foreach (var line in InstallRunner.Verify(request))
@@ -205,14 +228,14 @@ public static class Cli
         {
             Console.WriteLine("  --room <code>       room code, 6 chars (default DBPEAK)");
             Console.WriteLine("  --name <text>       display name for the browser (default 'PeakRelay Dedicated')");
-            Console.WriteLine("  --max <n>           max players (default 20)");
+            Console.WriteLine("  --max <n>           max players, 1-100 (default 20)");
             Console.WriteLine("  --password <text>   room password (default none)");
             Console.WriteLine("  --hostname <text>   host player name without Steam (default DedicatedHost)");
             Console.WriteLine("  --stage-relay <dir> also copy the relay server into this folder");
         }
         Console.WriteLine("  --host <host>       relay host (default 127.0.0.1)");
         Console.WriteLine("  --port <port>       relay port (default 5055)");
-        Console.WriteLine("  --yes               non-interactive");
+        Console.WriteLine("  --yes               non-interactive (input never prompts)");
         Console.WriteLine("  -h, --help          this help");
     }
 }

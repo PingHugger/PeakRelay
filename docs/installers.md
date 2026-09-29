@@ -46,9 +46,10 @@ PeakRelayInstaller-Server.exe --dir <game> [--room DBPEAK] [--name "..."] [--max
 PeakRelayInstaller-Client.exe --dir <game> [--host 127.0.0.1] [--port 5055] --yes
 ```
 
-`--yes` makes it fully non-interactive (exit 0 = install verified, 1 = failed); without
-`--dir` the installers probe `PEAK_GAME_DIR`, the folder they live in, and the default
-Steam library path.
+`--yes` makes it fully non-interactive. Exit codes: 0 = install verified, 1 = install
+failed, 2 = usage error (unknown flag, missing flag value, out-of-range `--max`/`--port` —
+nothing is installed). Without `--dir` the installers probe `PEAK_GAME_DIR`, the folder
+they live in, and the default Steam library path.
 
 ## Building the installers
 
