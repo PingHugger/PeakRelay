@@ -56,7 +56,10 @@ public static class Doctor
         }
         else
         {
-            checks.Add(new Check(CheckStatus.Warn, "Loader",
+            // FAIL, not WARN: the game LOADS whatever winhttp.dll sits next to it, and a
+            // stale 4.3.0 proxy native-crashes the 2026-09 PEAK update — this does not
+            // degrade to vanilla, it kills the process before BepInEx logs.
+            checks.Add(new Check(CheckStatus.Fail, "Loader",
                 "winhttp.dll present but not the known-good Doorstop 4.5.0 bytes — the 2026-09 " +
                 "PEAK update crashes the old 4.3.0 loader before BepInEx logs anything.",
                 "Install to replace it with the known-good loader."));

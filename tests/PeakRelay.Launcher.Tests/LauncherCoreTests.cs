@@ -195,7 +195,7 @@ public sealed class DoctorTests : IDisposable
             Doctor.Inspect(_gameDir, new LauncherState()).First(c => c.Name == "Loader").Status);
 
         File.WriteAllBytes(winhttp, new byte[] { 0x4D, 0x5A, 0x00 }); // any non-known bytes
-        Assert.Equal(CheckStatus.Warn,
+        Assert.Equal(CheckStatus.Fail,
             Doctor.Inspect(_gameDir, new LauncherState()).First(c => c.Name == "Loader").Status);
 
         // The Pass branch needs the exact real Doorstop 4.5.0 DLL bytes (byte-for-byte
