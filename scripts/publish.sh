@@ -6,7 +6,11 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-DOTNET="${DOTNET:-dotnet}"
+# Portable SDK first (tools/dotnet), then PATH.
+DOTNET="${DOTNET:-$ROOT/tools/dotnet/dotnet.exe}"
+[ -x "$DOTNET" ] || DOTNET="$(command -v dotnet)"
+[ -n "$DOTNET" ] || { echo "no dotnet found (tools/dotnet or PATH)" >&2; exit 1; }
+export DOTNET_ROOT="$(dirname "$DOTNET")" DOTNET_CLI_TELEMETRY_OPTOUT=1
 
 echo ">> publishing PeakRelay.Server (net8.0, framework-dependent)"
 "$DOTNET" publish PeakRelay.Server/PeakRelay.Server.csproj \

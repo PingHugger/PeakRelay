@@ -27,7 +27,7 @@ your own server, and `docs/client-guide.md` for the player-side mod.
 | `Installer.Core/` | shared installer engine: embedded BepInEx/plugin/relay payloads, config writers, verification |
 | `Installer.Server/`, `Installer.Client/` | one-click Windows GUI installers (also scriptable via CLI flags) |
 | `scripts/` | fetch-libs, publish, peak-server (dedicated install/run/status), prepare-installer-payload |
-| `docs/` | protocol-notes, ops-inventory, host-guide, client-guide, installers |
+| `docs/` | protocol-notes, ops-inventory, host-guide, client-guide, installers, building |
 
 ## Quick start
 
@@ -52,12 +52,15 @@ player-side setup: `docs/client-guide.md`. The headless host runs with Steam clo
 
 ## Building
 
-Requires the .NET 8 SDK.
+Requires the .NET 8 SDK (a portable one lives in `tools/dotnet`; see `docs/building.md`).
 
 ```sh
 dotnet build PeakRelay.sln
 dotnet test tests/PeakRelay.Protocol.Tests
 ```
+
+Full build guide — lib provisioning, plugins, relay, installers, tests, troubleshooting:
+`docs/building.md`.
 
 The plugin builds need `lib/` to be populated (BepInEx + game DLLs); `scripts/fetch-libs.sh`
 does that from the local Steam install and GitHub releases. The server and tests build standalone.
