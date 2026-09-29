@@ -32,6 +32,11 @@ public sealed class MainForm : Form
     private readonly Label _hostState = new() { Text = "relay idle", AutoSize = true, ForeColor = Color.DimGray, TextAlign = ContentAlignment.MiddleCenter };
     private readonly RelayHost _relayHost = new();
     private readonly System.Windows.Forms.Timer _autoRefresh = new() { Interval = 20_000 };
+    private readonly CheckBox _dedicated = new()
+    {
+        Text = "Include dedicated-host files (own server)", AutoSize = true,
+        UseVisualStyleBackColor = true,
+    };
     private bool _busy;
 
     public MainForm()
@@ -69,26 +74,36 @@ public sealed class MainForm : Form
         hostRow.Controls.Add(_host, 0, 0);
         hostRow.Controls.Add(_hostState, 1, 0);
 
-        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 6, Padding = new Padding(10) };
+        _dedicated.Checked = _state.InstallDedicated;
+
+        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 7, Padding = new Padding(10) };
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));   // dir row
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 42));    // status list
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));   // install / play
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));   // host row
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));   // dedicated checkbox
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 58));    // log
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));   // hint
         root.Controls.Add(dirRow, 0, 0);
         root.Controls.Add(_status, 0, 1);
         root.Controls.Add(buttonRow, 0, 2);
         root.Controls.Add(hostRow, 0, 3);
-        root.Controls.Add(_log, 0, 4);
+        root.Controls.Add(_dedicated, 0, 4);
+        root.Controls.Add(_log, 0, 5);
         root.Controls.Add(new Label
         {
             Text = "install/repair from GitHub Releases · doctor re-checks every 20 s · CLI: PeakRelay.Launcher.exe doctor|install|update|play|host",
             AutoSize = true, ForeColor = Color.DimGray,
-        }, 0, 5);
+        }, 0, 6);
 
         Controls.Add(root);
 
+        _dedicated.CheckedChanged += (_, _) =>
+        {
+            _state.InstallDedicated = _dedicated.Checked;
+            _state.Save();
+            _ = RunAsync(RefreshAsync);
+        };
         _install.Click += async (_, _) => await RunAsync(InstallAsync).ConfigureAwait(true);
         _play.Click += async (_, _) => await RunAsync(PlayAsync).ConfigureAwait(true);
         _host.Click += async (_, _) => await RunAsync(HostAsync).ConfigureAwait(true);
@@ -168,6 +183,8 @@ public sealed class MainForm : Form
             _install.Text = "Install";
         else if (ready)
             _install.Text = _state.InstalledTag == null ? "Reinstall" : "Update";
+        else
+            _install.Text = "Repair";
     }
 
     private async Task InstallAsync()
@@ -203,7 +220,8 @@ public sealed class MainForm : Form
 
         foreach (var line in await ModApply.ApplyAsync(gameDir, asset, _state, latest.Tag,
                      (a, destination, t) => client.DownloadAsync(a, destination, t),
-                     host: "127.0.0.1", port: 5055).ConfigureAwait(true))
+                     host: "127.0.0.1", port: 5055,
+                     includeDedicated: _state.InstallDedicated).ConfigureAwait(true))
             Log("  " + line);
 
         Log($"applied {latest.Tag}.");

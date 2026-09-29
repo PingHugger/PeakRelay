@@ -10,6 +10,13 @@ public sealed class LauncherState
     public bool ServerSide { get; set; }
     public bool ClientSide { get; set; }
 
+    /// <summary>
+    /// Whether Install also deploys the dedicated-host files (server side). Default false:
+    /// most players only want to join, not host. When false, Install REMOVES any dedicated
+    /// files a previous install left behind.
+    /// </summary>
+    public bool InstallDedicated { get; set; }
+
     /// <summary>What the last ModApply installed (release tag + asset), for update checks.</summary>
     public string? InstalledTag { get; set; }
     public string? InstalledAsset { get; set; }

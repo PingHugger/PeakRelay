@@ -79,10 +79,13 @@ public static class Doctor
         var hasClient = File.Exists(clientMarker);
         if (hasDedicated)
             checks.Add(new Check(CheckStatus.Pass, "Dedicated plugin", dedicatedMarker));
+        else if (string.Equals(state.GameDir, gameDir, StringComparison.OrdinalIgnoreCase) && !state.InstallDedicated)
+            checks.Add(new Check(CheckStatus.Pass, "Dedicated plugin",
+                "not installed (player-only selection) — join-only is fully supported."));
         else
             checks.Add(new Check(CheckStatus.Warn, "Dedicated plugin",
                 "PeakRelay.Dedicated.dll not found — hosting not available from this install.",
-                "Install with the server side to add hosting."));
+                "Enable 'dedicated host files' and Install to add hosting."));
         if (hasClient)
             checks.Add(new Check(CheckStatus.Pass, "Client plugin", clientMarker));
         else
