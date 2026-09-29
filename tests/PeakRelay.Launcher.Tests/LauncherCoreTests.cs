@@ -197,6 +197,81 @@ public sealed class LauncherStateTests : IDisposable
     }
 }
 
+[Collection("LauncherFs")]
+public sealed class ServerCopyTests : IDisposable
+{
+    private readonly string _temp =
+        Path.Combine(Path.GetTempPath(), "peakrelay-servercopy-" + Path.GetRandomFileName());
+    private readonly string _gameDir;
+    private readonly string _serverDir;
+
+    public ServerCopyTests()
+    {
+        Directory.CreateDirectory(_temp);
+        LauncherPaths.UseRootForTests(_temp);
+        _gameDir = Path.Combine(_temp, "PEAK");
+        _serverDir = Path.Combine(_temp, "server");
+        Directory.CreateDirectory(_gameDir);
+        File.WriteAllText(Path.Combine(_gameDir, "PEAK.exe"), "game exe");
+        Directory.CreateDirectory(Path.Combine(_gameDir, "PEAK_Data", "Managed"));
+        File.WriteAllText(Path.Combine(_gameDir, "PEAK_Data", "Managed", "Assembly-CSharp.dll"), "gamedata");
+        ServerCopy.EnsureBepInExOverride = dir =>
+        {
+            Directory.CreateDirectory(Path.Combine(dir, "BepInEx", "core"));
+            File.WriteAllText(Path.Combine(dir, "BepInEx", "core", "BepInEx.dll"), "core");
+            return new System.Collections.Generic.List<string> { "(bepinex)" };
+        };
+        ServerCopy.DeployDedicatedOverride = dir =>
+        {
+            Directory.CreateDirectory(Path.Combine(dir, "BepInEx", "plugins", "PeakRelay.Dedicated"));
+            File.WriteAllText(Path.Combine(dir, "BepInEx", "plugins", "PeakRelay.Dedicated", "PeakRelay.Dedicated.dll"), "plugin");
+            return new System.Collections.Generic.List<string> { "(dedicated)" };
+        };
+    }
+
+    public void Dispose()
+    {
+        ServerCopy.EnsureBepInExOverride = null;
+        ServerCopy.DeployDedicatedOverride = null;
+        Directory.Delete(_temp, recursive: true);
+        LauncherPaths.UseRootForTests(Path.GetTempPath());
+    }
+
+    [Fact]
+    public void Sync_creates_copy_with_renamed_exe_and_dedicated_only_mods()
+    {
+        var log = ServerCopy.Sync(_gameDir, _serverDir);
+
+        Assert.True(ServerCopy.LooksLikeServerCopy(_serverDir));
+        Assert.True(File.Exists(Path.Combine(_serverDir, "PeakServer.exe")));
+        Assert.False(File.Exists(Path.Combine(_serverDir, "PEAK.exe")));
+        Assert.True(Directory.Exists(Path.Combine(_serverDir, "PeakServer_Data", "Managed")));
+        Assert.True(File.Exists(Path.Combine(_serverDir, "BepInEx", "plugins", "PeakRelay.Dedicated", "PeakRelay.Dedicated.dll")));
+        Assert.True(File.Exists(Path.Combine(_serverDir, "BepInEx", "plugins", "PeakRelay.Dedicated", "server.json")));
+        Assert.False(Directory.Exists(Path.Combine(_serverDir, "BepInEx", "plugins", "PeakRelay.Client")));
+        Assert.True(ServerCopy.StampIsCurrent(_gameDir, _serverDir));
+        Assert.Contains(log, l => l.Contains("renamed PEAK.exe -> PeakServer.exe"));
+    }
+
+    [Fact]
+    public void Stamp_detects_game_drift()
+    {
+        ServerCopy.Sync(_gameDir, _serverDir);
+        Assert.True(ServerCopy.StampIsCurrent(_gameDir, _serverDir));
+
+        // Steam updates the game exe.
+        Thread.Sleep(20);
+        File.WriteAllText(Path.Combine(_gameDir, "PEAK.exe"), "updated game exe");
+        Assert.False(ServerCopy.StampIsCurrent(_gameDir, _serverDir));
+    }
+
+    [Fact]
+    public void Start_rejects_a_directory_without_the_server_exe()
+    {
+        Assert.Throws<InvalidOperationException>(() => ServerCopy.Start(Path.Combine(_temp, "nope")));
+    }
+}
+
 public sealed class DoctorTests : IDisposable
 {
     private readonly string _temp =
@@ -233,7 +308,8 @@ public sealed class DoctorTests : IDisposable
         Assert.Equal(CheckStatus.Pass, checks.First(c => c.Name == "Game").Status);
         Assert.Equal(CheckStatus.Fail, checks.First(c => c.Name == "Loader").Status);
         Assert.Equal(CheckStatus.Fail, checks.First(c => c.Name == "BepInEx").Status);
-        Assert.Equal(CheckStatus.Warn, checks.First(c => c.Name == "Dedicated plugin").Status);
+        // Play install is player-only by design — a missing dedicated plugin is expected.
+        Assert.Equal(CheckStatus.Pass, checks.First(c => c.Name == "Dedicated plugin").Status);
         Assert.Equal(CheckStatus.Warn, checks.First(c => c.Name == "Client plugin").Status);
         Assert.False(Doctor.PlayReady(checks));
         Assert.All(checks.Where(c => c.Status != CheckStatus.Pass), c => Assert.NotNull(c.Fix));
@@ -311,7 +387,7 @@ public sealed class ModApplyTests : IDisposable
     }
 
     [Fact]
-    public async Task ApplyAsync_client_only_skips_and_removes_dedicated_files()
+    public async Task ApplyAsync_is_always_player_only_and_removes_legacy_dedicated_files()
     {
         ModApply.EnsureBepInExOverride = _ => new System.Collections.Generic.List<string> { "(fake bepinex step)" };
         try
@@ -327,7 +403,7 @@ public sealed class ModApplyTests : IDisposable
                 Add(zip, "PeakRelay.Client/PeakRelay.Protocol.dll");
             }
             var asset = new ReleaseAsset("PeakRelay-plugins.zip", 1, 1, "unused://");
-            var state = new LauncherState { InstallDedicated = false };
+            var state = new LauncherState();
             var bytes = File.ReadAllBytes(zipPath);
 
             // Simulate a previous dual install: dedicated files exist and must be removed.
@@ -336,9 +412,9 @@ public sealed class ModApplyTests : IDisposable
             File.WriteAllText(Path.Combine(dedicatedDir, "PeakRelay.Dedicated.dll"), "old");
             File.WriteAllText(Path.Combine(dedicatedDir, "server.json"), "{}");
 
-            var log = await ModApply.ApplyAsync(_gameDir, asset, state, "v0.6.4",
+            var log = await ModApply.ApplyAsync(_gameDir, asset, state, "v0.7.0",
                 (_, destination, _) => { File.WriteAllBytes(destination, bytes); return Task.FromResult((long)bytes.Length); },
-                host: "127.0.0.1", port: 5055, includeDedicated: false);
+                host: "127.0.0.1", port: 5055);
 
             Assert.True(File.Exists(Path.Combine(_gameDir, "BepInEx", "plugins", "PeakRelay.Client", "PeakRelay.Client.dll")));
             Assert.False(Directory.Exists(Path.Combine(_gameDir, "BepInEx", "plugins", "PeakRelay.Dedicated")));
@@ -346,38 +422,6 @@ public sealed class ModApplyTests : IDisposable
             Assert.False(state.ServerSide);
             Assert.True(state.ClientSide);
             Assert.Contains(log, l => l.Contains("removed dedicated-host files"));
-        }
-        finally
-        {
-            ModApply.EnsureBepInExOverride = null;
-        }
-    }
-
-    [Fact]
-    public async Task ApplyAsync_with_dedicated_installs_both_sides_and_server_json()
-    {
-        ModApply.EnsureBepInExOverride = _ => new System.Collections.Generic.List<string> { "(fake bepinex step)" };
-        try
-        {
-            var cache = Path.Combine(_temp, "assets");
-            Directory.CreateDirectory(cache);
-            var zipPath = Path.Combine(cache, "PeakRelay-plugins.zip");
-            using (var zip = new ZipArchive(File.Create(zipPath), ZipArchiveMode.Create))
-            {
-                Add(zip, "PeakRelay.Dedicated/PeakRelay.Dedicated.dll");
-                Add(zip, "PeakRelay.Client/PeakRelay.Client.dll");
-            }
-            var asset = new ReleaseAsset("PeakRelay-plugins.zip", 1, 1, "unused://");
-            var state = new LauncherState { InstallDedicated = true };
-            var bytes = File.ReadAllBytes(zipPath);
-
-            await ModApply.ApplyAsync(_gameDir, asset, state, "v0.6.4",
-                (_, destination, _) => { File.WriteAllBytes(destination, bytes); return Task.FromResult((long)bytes.Length); },
-                host: "127.0.0.1", port: 5055, includeDedicated: true);
-
-            Assert.True(File.Exists(Path.Combine(_gameDir, "BepInEx", "plugins", "PeakRelay.Dedicated", "PeakRelay.Dedicated.dll")));
-            Assert.True(File.Exists(Path.Combine(_gameDir, "BepInEx", "plugins", "PeakRelay.Dedicated", "server.json")));
-            Assert.True(state.ServerSide);
         }
         finally
         {

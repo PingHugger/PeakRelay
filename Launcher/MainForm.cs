@@ -32,10 +32,14 @@ public sealed class MainForm : Form
     private readonly Label _hostState = new() { Text = "relay idle", AutoSize = true, ForeColor = Color.DimGray, TextAlign = ContentAlignment.MiddleCenter };
     private readonly RelayHost _relayHost = new();
     private readonly System.Windows.Forms.Timer _autoRefresh = new() { Interval = 20_000 };
-    private readonly CheckBox _dedicated = new()
+    private readonly Button _server = new()
     {
-        Text = "Include dedicated-host files (own server)", AutoSize = true,
-        UseVisualStyleBackColor = true,
+        Dock = DockStyle.Fill, Height = 44, Text = "Set up server copy",
+    };
+    private readonly Label _serverState = new()
+    {
+        Text = "no server copy", AutoSize = true,
+        ForeColor = Color.DimGray, TextAlign = ContentAlignment.MiddleCenter,
     };
     private bool _busy;
 
@@ -74,39 +78,38 @@ public sealed class MainForm : Form
         hostRow.Controls.Add(_host, 0, 0);
         hostRow.Controls.Add(_hostState, 1, 0);
 
-        _dedicated.Checked = _state.InstallDedicated;
+        var serverRow = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 2, Height = 50 };
+        serverRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        serverRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        serverRow.Controls.Add(_server, 0, 0);
+        serverRow.Controls.Add(_serverState, 1, 0);
 
-        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 7, Padding = new Padding(10) };
+        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 8, Padding = new Padding(10) };
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));   // dir row
-        root.RowStyles.Add(new RowStyle(SizeType.Percent, 42));    // status list
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 40));    // status list
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));   // install / play
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));   // host row
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));   // dedicated checkbox
-        root.RowStyles.Add(new RowStyle(SizeType.Percent, 58));    // log
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));   // host relay row
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));   // dedicated server row
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 60));    // log
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));   // hint
         root.Controls.Add(dirRow, 0, 0);
         root.Controls.Add(_status, 0, 1);
         root.Controls.Add(buttonRow, 0, 2);
         root.Controls.Add(hostRow, 0, 3);
-        root.Controls.Add(_dedicated, 0, 4);
+        root.Controls.Add(serverRow, 0, 4);
         root.Controls.Add(_log, 0, 5);
         root.Controls.Add(new Label
         {
-            Text = "install/repair from GitHub Releases · doctor re-checks every 20 s · CLI: PeakRelay.Launcher.exe doctor|install|update|play|host",
+            Text = "install/repair from GitHub Releases · doctor re-checks every 20 s · CLI: doctor|install|update|play|host|server-sync|server-start|server-stop",
             AutoSize = true, ForeColor = Color.DimGray,
         }, 0, 6);
 
         Controls.Add(root);
 
-        _dedicated.CheckedChanged += (_, _) =>
-        {
-            _state.InstallDedicated = _dedicated.Checked;
-            _state.Save();
-            _ = RunAsync(RefreshAsync);
-        };
         _install.Click += async (_, _) => await RunAsync(InstallAsync).ConfigureAwait(true);
         _play.Click += async (_, _) => await RunAsync(PlayAsync).ConfigureAwait(true);
         _host.Click += async (_, _) => await RunAsync(HostAsync).ConfigureAwait(true);
+        _server.Click += async (_, _) => await RunAsync(ServerButtonAsync).ConfigureAwait(true);
         _gameDir.TextChanged += (_, _) => _ = RunAsync(RefreshAsync);
         _autoRefresh.Tick += (_, _) => _ = RunAsync(RefreshAsync);
 
@@ -185,6 +188,8 @@ public sealed class MainForm : Form
             _install.Text = _state.InstalledTag == null ? "Reinstall" : "Update";
         else
             _install.Text = "Repair";
+
+        await RefreshServerRow().ConfigureAwait(true);
     }
 
     private async Task InstallAsync()
@@ -220,8 +225,7 @@ public sealed class MainForm : Form
 
         foreach (var line in await ModApply.ApplyAsync(gameDir, asset, _state, latest.Tag,
                      (a, destination, t) => client.DownloadAsync(a, destination, t),
-                     host: "127.0.0.1", port: 5055,
-                     includeDedicated: _state.InstallDedicated).ConfigureAwait(true))
+                     host: "127.0.0.1", port: 5055).ConfigureAwait(true))
             Log("  " + line);
 
         Log($"applied {latest.Tag}.");
@@ -263,6 +267,72 @@ public sealed class MainForm : Form
             _hostState.Text = "relay failed";
             Log($"relay failed: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// The dedicated-server button: sets up / syncs the server copy when it is absent or
+    /// stale, starts it when idle, stops it when running.
+    /// </summary>
+    private async Task ServerButtonAsync()
+    {
+        var gameDir = _gameDir.Text;
+        if (!GameLocator.LooksLikeGameRoot(gameDir))
+        {
+            Log("error: pick a valid PEAK install first.");
+            return;
+        }
+        var serverDir = string.IsNullOrWhiteSpace(_state.ServerDir)
+            ? ServerCopy.DefaultServerDir : _state.ServerDir;
+
+        if (ServerCopy.IsRunning())
+        {
+            await Task.Run(ServerCopy.Stop).ConfigureAwait(true);
+            Log("dedicated server stopped.");
+            await RefreshServerRow().ConfigureAwait(true);
+            return;
+        }
+
+        if (!ServerCopy.LooksLikeServerCopy(serverDir) || !ServerCopy.StampIsCurrent(gameDir, serverDir))
+        {
+            _server.Enabled = false;
+            Log($"creating/refreshing the server copy at {serverDir} (a few minutes, ~2 GB copy)…");
+            foreach (var line in await ServerCopy.SyncAsync(gameDir, serverDir).ConfigureAwait(true))
+                Log("  " + line);
+            _state.ServerDir = serverDir;
+            _state.Save();
+            _server.Enabled = true;
+        }
+
+        var process = await Task.Run(() => ServerCopy.Start(serverDir)).ConfigureAwait(true);
+        Log($"dedicated server started (pid {process.Id}) from {serverDir}.");
+        await RefreshServerRow().ConfigureAwait(true);
+    }
+
+    /// <summary>Syncs the server button/label with on-disk and process state.</summary>
+    private Task RefreshServerRow()
+    {
+        var serverDir = string.IsNullOrWhiteSpace(_state.ServerDir)
+            ? ServerCopy.DefaultServerDir : _state.ServerDir;
+        if (ServerCopy.IsRunning())
+        {
+            _server.Text = "Stop server";
+            _serverState.Text = "dedicated server RUNNING";
+            _serverState.ForeColor = Color.FromArgb(120, 200, 120);
+        }
+        else if (ServerCopy.LooksLikeServerCopy(serverDir))
+        {
+            var current = ServerCopy.StampIsCurrent(_gameDir.Text, serverDir);
+            _server.Text = current ? "Start server" : "Update server copy";
+            _serverState.Text = current ? $"copy ready: {serverDir}" : "copy outdated (game updated)";
+            _serverState.ForeColor = current ? Color.DimGray : Color.FromArgb(230, 190, 90);
+        }
+        else
+        {
+            _server.Text = "Set up server copy";
+            _serverState.Text = "no server copy";
+            _serverState.ForeColor = Color.DimGray;
+        }
+        return Task.CompletedTask;
     }
 
     /// <summary>Paste-prompt for a GitHub token (private repo). True when one was saved.</summary>

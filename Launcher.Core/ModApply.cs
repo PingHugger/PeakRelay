@@ -29,18 +29,16 @@ public static class ModApply
     internal static Func<string, List<string>>? EnsureBepInExOverride;
 
     /// <summary>
-    /// Applies <paramref name="asset"/> and returns progress/log lines. Config settings are
-    /// computed AFTER the plugin files are extracted, so a first-ever install that ADDS a
-    /// side also gets its config (server.json / client cfg) written in the same pass.
-    /// When <paramref name="includeDedicated"/> is false the dedicated-host files are not
-    /// installed and any existing ones are REMOVED (player-only install).
+    /// Applies <paramref name="asset"/> to the PLAY install and returns progress/log lines.
+    /// The play install is always PLAYER-ONLY: dedicated files are never installed here and
+    /// any leftovers from older versions are removed (hosting runs from the ServerCopy).
+    /// Loader + BepInEx core always come from the embedded payload, never the download.
     /// </summary>
     public static async Task<List<string>> ApplyAsync(string gameDir, ReleaseAsset asset,
         LauncherState state, string tag,
         Func<ReleaseAsset, string, CancellationToken, Task<long>> download,
         string? host, int port,
         string? room = null, string? password = null, string? hostName = null, int maxPlayers = 20,
-        bool includeDedicated = true,
         CancellationToken token = default)
     {
         var log = new List<string>();
@@ -59,16 +57,10 @@ public static class ModApply
         using (var zip = new ZipArchive(stream, ZipArchiveMode.Read))
         {
             var classified = ClassifyPluginEntries(zip, gameDir).ToList();
+            // Play install: client files only — dedicated belongs to the server copy.
+            classified.RemoveAll(c => c.TargetDir == Layout.DedicatedPluginDir(gameDir));
             if (classified.Count == 0)
-                throw new InvalidDataException($"'{asset.Name}' contains no PeakRelay plugin files");
-
-            if (!includeDedicated)
-            {
-                var dedicatedDir = Layout.DedicatedPluginDir(gameDir);
-                classified.RemoveAll(c => c.TargetDir == dedicatedDir);
-            }
-            if (classified.Count == 0)
-                throw new InvalidDataException($"'{asset.Name}' contains no client plugin files (dedicated side excluded)");
+                throw new InvalidDataException($"'{asset.Name}' contains no client plugin files");
 
             foreach (var (entry, targetDir) in classified)
             {
@@ -94,8 +86,7 @@ public static class ModApply
             }
         }
 
-        if (!includeDedicated)
-            RemoveDedicatedSide(gameDir, log);
+        RemoveDedicatedSide(gameDir, log); // legacy cleanup: dedicated files never live in the play install
 
         // Loader + BepInEx core always from the embedded payload (see class comment).
         var ensureBepInEx = EnsureBepInExOverride ?? PluginDeployer.EnsureBepInEx;
