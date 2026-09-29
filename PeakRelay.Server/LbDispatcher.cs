@@ -262,6 +262,10 @@ public sealed class LbDispatcher
 
             // join event to everyone (the joiner caches room state and fires OnJoinedRoom from it)
             room.BroadcastEvent(room.BuildJoinEvent(peer), null);
+            // Photon Cloud join semantics: the new actor receives the room's cached events
+            // (Instantiate/RPC buffers) AFTER its own join event — without this a late
+            // joiner spawns into a world without the host's networked objects.
+            room.ReplayCacheTo(peer);
         }
     }
 
@@ -286,6 +290,8 @@ public sealed class LbDispatcher
         }
         if (room.ActorCount > 0)
             room.BroadcastEvent(room.BuildLeaveEvent(peer), null);
+        // The leaver's cached events (its Instantiates/RPCs) are dropped, as on Photon Cloud.
+        room.RemoveCachedEvents(peer.ActorNumber, eventCode: 0);
         peer.Room = null;
         peer.ActorNumber = 0;
     }
@@ -301,6 +307,7 @@ public sealed class LbDispatcher
 
         byte eventCode = request.Parameters.TryGetValue(LbParam.Code, out var codeObj) && codeObj is byte b ? b : (byte)0;
         var content = request.Parameters.GetValueOrDefault(LbParam.CustomEventContent);
+        byte cacheOp = request.Parameters.TryGetValue(LbParam.Cache, out var c) && c is byte cb ? cb : (byte)0;
 
         byte[] BuildEvent() => P16.EncodeEvent(new LbMessage
         {
@@ -313,6 +320,29 @@ public sealed class LbDispatcher
                 [LbParam.ActorNr] = peer.ActorNumber, // Sender derives from param 254
             },
         });
+
+        // Cache management ops (EventCaching): the room's event cache is what lets late
+        // joiners see the host's Instantiates/RPCs — the difference between a working
+        // world and an empty frozen one.
+        switch (cacheOp)
+        {
+            case 4: // AddToRoomCache
+            case 5: // AddToRoomCacheGlobal
+                var cached = BuildEvent();
+                room.CacheEvent(peer.ActorNumber, eventCode, cached);
+                SendResponse(peer, LbOp.RaiseEvent, LbError.Ok);
+                return;
+            case 6: // RemoveFromRoomCache
+                room.RemoveCachedEvents(peer.ActorNumber, eventCode);
+                SendResponse(peer, LbOp.RaiseEvent, LbError.Ok);
+                return;
+            case 0:
+                break; // normal raise, falls through to routing below
+            default: // Merge/Replace (1-3, obsolete) and slice ops (10-13) unsupported
+                SendResponse(peer, LbOp.RaiseEvent, LbError.InvalidOperation,
+                $"relay: unsupported cache op {cacheOp}");
+                return;
+        }
 
         if (request.Parameters.TryGetValue(LbParam.ActorList, out var targets))
         {

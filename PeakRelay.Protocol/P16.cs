@@ -377,6 +377,28 @@ public static class P16
         return new LbRequest { Op = (byte)op, Parameters = ReadParameterTable(s) };
     }
 
+    /// <summary>
+    /// Decodes an encoded event body ([code][paramCount][key/value…]) back into an
+    /// LbMessage. Used by the relay's cache-management paths and tests; values decode via
+    /// the same ReadValue the request path uses (Raw passthrough for exotic content).
+    /// </summary>
+    public static bool TryDecodeEvent(byte[] payload, out LbMessage message)
+    {
+        message = new LbMessage { IsEvent = true };
+        try
+        {
+            using var s = new MemoryStream(payload);
+            int code = s.ReadByte();
+            if (code < 0) return false;
+            message = new LbMessage { IsEvent = true, Code = (byte)code, Parameters = ReadParameterTable(s) };
+            return true;
+        }
+        catch (Exception ex) when (ex is InvalidDataException or EndOfStreamException or IOException)
+        {
+            return false;
+        }
+    }
+
     public static Dictionary<byte, object> ReadParameterTable(MemoryStream s)
     {
         var result = new Dictionary<byte, object>();
