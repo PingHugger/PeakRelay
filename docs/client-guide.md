@@ -118,9 +118,20 @@ The fallback design (relay off ⇒ vanilla) makes silence ambiguous, so check ex
 
 ## 6. Troubleshooting
 
+* **Game crashes at launch (Unity crash handler, no `BepInEx/LogOutput.log`) after a game
+  update** — BepInEx 5.4.23.2's bundled Doorstop 4.3.0 loader native-crashes the 2026-09
+  PEAK update during injection. Fix: replace the game's `winhttp.dll` with Doorstop 4.5.0
+  (`doorstop_win_release_4.5.0.zip` → `x64/winhttp.dll`). The PeakRelay installers ship
+  this fixed loader and always overwrite `winhttp.dll`; older manual installs need it done
+  once by hand. Vanilla game unaffected — to play vanilla, rename `winhttp.dll` away.
+* **`Unable to start Unity log writer` in LogOutput.log** — cosmetic under the updated
+  runtime: BepInEx-side lines still land in `LogOutput.log`, game-engine lines in the
+  normal `Player.log`.
 * **No `PUN redirected` line** — plugin not loaded: verify BepInEx 5.4.x is installed
   (`winhttp.dll`, `BepInEx/core` exist in the PEAK folder) and the two DLLs are in
-  `BepInEx/plugins/PeakRelay.Client/`.
+  `BepInEx/plugins/PeakRelay.Client/`. If `relay=True` logs but nothing else does, the
+  plugin's patches failed at startup — check for `patch installation failed` in
+  LogOutput.log and update the plugin build.
 * **`relay connect … failed` / Photon timeout** — the relay isn't reachable at
   `Host:Port` (down, wrong port, firewall). The relay must accept **TCP** 5055 (not UDP).
 * **Server browser missing** — check `LogOutput.log` for

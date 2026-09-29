@@ -12,6 +12,9 @@ public static class PayloadNames
     /// <summary>BepInEx 5.4.23.2 win_x64 archive, extracted at the game root.</summary>
     public const string BepInExZip = "bepinex.zip";
 
+    /// <summary>Doorstop 4.5.0 loader proxy (installed as the game's winhttp.dll).</summary>
+    public const string DoorstopWinhttp = "doorstop/winhttp.dll";
+
     /// <summary>Published PeakRelay.Server (relay.zip), staged as-is.</summary>
     public const string RelayZip = "relay/relay.zip";
 

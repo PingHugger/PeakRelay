@@ -5,12 +5,17 @@ Two Windows GUI installers, one per role — no .NET required on the target mach
 
 | Installer | Installs into the game dir | Extra outputs |
 |---|---|---|
-| `PeakRelayInstaller-Server.exe` | BepInEx 5.4.23.2 (if missing) + `PeakRelay.Dedicated` plugin + `server.json` | optionally the relay server files + `start-relay.cmd` + `README.txt` into any folder |
-| `PeakRelayInstaller-Client.exe` | BepInEx 5.4.23.2 (if missing) + `PeakRelay.Client` plugin + `com.peakrelay.client.cfg` | — |
+| `PeakRelayInstaller-Server.exe` | BepInEx 5.4.23.2 (if missing) + Doorstop 4.5.0 loader + `PeakRelay.Dedicated` plugin + `server.json` | optionally the relay server files + `start-relay.cmd` + `README.txt` into any folder |
+| `PeakRelayInstaller-Client.exe` | BepInEx 5.4.23.2 (if missing) + Doorstop 4.5.0 loader + `PeakRelay.Client` plugin + `com.peakrelay.client.cfg` | — |
 
 Both: pick the PEAK install folder (validated: must contain `PEAK.exe`), configure,
 install with a step log, and finish with a verification checklist. Re-running is safe —
 payloads and config are overwritten, nothing else is touched.
+
+The installers always overwrite the game's `winhttp.dll` with a **Doorstop 4.5.0** loader:
+BepInEx 5.4.23.2 bundles Doorstop 4.3.0 (2024), whose proxy native-crashes the 2026-09
+PEAK update during injection (crash at launch, no `BepInEx/LogOutput.log` — see
+`docs/client-guide.md` §6).
 
 Download/locate them in `dist/installers/` (rebuilt with the commands below).
 

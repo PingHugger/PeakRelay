@@ -30,6 +30,16 @@ curl -sL -o "$PAYLOAD/bepinex.zip" \
     "https://github.com/BepInEx/BepInEx/releases/download/v5.4.23.2/BepInEx_win_x64_5.4.23.2.zip"
 unzip -q -t "$PAYLOAD/bepinex.zip"   # fail early on a truncated download
 
+# Doorstop 4.5.0 loader: BepInEx 5.4.23.2 bundles Doorstop 4.3.0 (2024), whose proxy DLL
+# crashes the 2026-09 PEAK update (native crash in the injected winhttp.dll before BepInEx
+# logs anything). The installer always overwrites the game's winhttp.dll with this build.
+echo ">> fetching Doorstop 4.5.0 (win_x64 loader)"
+curl -sL -o /tmp/doorstop.zip \
+    "https://github.com/NeighTools/UnityDoorstop/releases/download/v4.5.0/doorstop_win_release_4.5.0.zip"
+unzip -q -o /tmp/doorstop.zip -d /tmp/doorstop x64/winhttp.dll
+mkdir -p "$PAYLOAD/doorstop"
+cp /tmp/doorstop/x64/winhttp.dll "$PAYLOAD/doorstop/winhttp.dll"
+
 echo ">> copying plugin DLLs (embedded loose, one resource per DLL)"
 cp PeakRelay.Dedicated/bin/Debug/netstandard2.1/PeakRelay.Dedicated.dll \
    PeakRelay.Dedicated/bin/Debug/netstandard2.1/PeakRelay.Protocol.dll \

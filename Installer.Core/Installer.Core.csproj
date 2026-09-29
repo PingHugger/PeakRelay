@@ -26,6 +26,8 @@
   <ItemGroup>
     <EmbeddedResource Include="Payload/payload/bepinex.zip"
                       LogicalName="PeakRelay.Installer.Payload.bepinex.zip" />
+    <EmbeddedResource Include="Payload/payload/doorstop/winhttp.dll"
+                      LogicalName="PeakRelay.Installer.Payload.doorstop.winhttp.dll" />
     <EmbeddedResource Include="Payload/payload/relay.zip"
                       LogicalName="PeakRelay.Installer.Payload.relay.relay.zip" />
     <EmbeddedResource Include="Payload/payload/plugins/Dedicated/*.dll"

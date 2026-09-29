@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.Reflection;
 using BepInEx;
 using BepInEx.Logging;
 using ExitGames.Client.Photon;
@@ -32,8 +35,17 @@ public sealed class RelayPlugin : BaseUnityPlugin
         RelayConfig.Bind(Config);
 
         _harmony = new Harmony(PluginGuid);
-        _harmony.PatchAll(typeof(PunSocketPatches));
-        _harmony.PatchAll(typeof(ConnectPatches));
+        try
+        {
+            _harmony.PatchAll(typeof(PunSocketPatches));
+            _harmony.PatchAll(typeof(SerializationProtocolPatch));
+            _harmony.PatchAll(typeof(ConnectPatches));
+        }
+        catch (Exception ex)
+        {
+            Log.LogError($"patch installation failed: {ex.Message}");
+            throw;
+        }
 
         // server browser: patches (when the game version matches) + page injection
         GameAPI.Initialize(_harmony);
@@ -54,10 +66,20 @@ public sealed class RelayPlugin : BaseUnityPlugin
     /// Registers RelayClientSocket in the Udp slot of every LoadBalancingPeer (game, voice,
     /// any) when the relay is enabled. The socket itself speaks the relay protocol; when the
     /// relay is disabled the slot stays vanilla and nothing else in this plugin activates.
+    ///
+    /// The peer has TWO constructors, so the patch must name them explicitly — an unqualified
+    /// MethodType.Constructor is ambiguous and Harmony throws at PatchAll, killing the plugin
+    /// in Awake (live client-run find, 2026-09-29: identical to the Dedicated plugin's bug).
     /// </summary>
-    [HarmonyPatch(typeof(LoadBalancingPeer), MethodType.Constructor)]
+    [HarmonyPatch]
     internal static class PunSocketPatches
     {
+        private static IEnumerable<MethodBase> TargetMethods()
+        {
+            yield return AccessTools.Constructor(typeof(LoadBalancingPeer), new[] { typeof(ConnectionProtocol) });
+            yield return AccessTools.Constructor(typeof(LoadBalancingPeer), new[] { typeof(IPhotonPeerListener), typeof(ConnectionProtocol) });
+        }
+
         [HarmonyPostfix]
         public static void InstallSocketImplementation(LoadBalancingPeer __instance)
         {
@@ -70,6 +92,37 @@ public sealed class RelayPlugin : BaseUnityPlugin
                 return; // already installed (peers can be constructed more than once)
             }
             config[ConnectionProtocol.Udp] = typeof(RelayClientSocket);
+        }
+    }
+
+    /// <summary>
+    /// Forces PUN's serialization to GpBinaryV16 — the format the relay speaks byte-exact.
+    /// The game's LoadBalancingClient constructor sets GpBinaryV18; without this override a
+    /// relay session dies with 'unknown P16 tag 96' (a V18-only type) in the key-exchange op.
+    /// Ported from the Dedicated plugin's live-proven fix: postfix on both client constructors
+    /// (patching the property setter itself NREs inside Harmony).
+    /// </summary>
+    [HarmonyPatch]
+    internal static class SerializationProtocolPatch
+    {
+        private static IEnumerable<MethodBase> TargetMethods()
+        {
+            var t = typeof(LoadBalancingClient);
+            yield return AccessTools.Constructor(t, new[] { typeof(ConnectionProtocol) });
+            yield return AccessTools.Constructor(t, new[]
+            {
+                typeof(string), typeof(string), typeof(string), typeof(ConnectionProtocol),
+            });
+        }
+
+        [HarmonyPostfix]
+        public static void ForceV16(LoadBalancingClient __instance)
+        {
+            if (__instance.SerializationProtocol == SerializationProtocol.GpBinaryV18)
+            {
+                __instance.SerializationProtocol = SerializationProtocol.GpBinaryV16;
+                LogInfo("serialization forced to GpBinaryV16 (relay format)");
+            }
         }
     }
 

@@ -22,6 +22,14 @@ public class InstallerPayloadTests
     }
 
     [Fact]
+    public void Doorstop_loader_is_embedded()
+    {
+        using var stream = Core.GetManifestResourceStream("PeakRelay.Installer.Payload.doorstop.winhttp.dll");
+        Assert.NotNull(stream);
+        Assert.True(stream!.Length > 10_000, $"doorstop winhttp.dll looks truncated: {stream!.Length} bytes");
+    }
+
+    [Fact]
     public void Relay_zip_is_embedded()
     {
         using var stream = Core.GetManifestResourceStream("PeakRelay.Installer.Payload.relay.relay.zip");
@@ -46,6 +54,7 @@ public class InstallerPayloadTests
     {
         var expected = new HashSet<string>(StringComparer.Ordinal);
         expected.Add("PeakRelay.Installer.Payload.bepinex.zip");
+        expected.Add("PeakRelay.Installer.Payload.doorstop.winhttp.dll");
         expected.Add("PeakRelay.Installer.Payload.relay.relay.zip");
         foreach (var (set, dlls) in PeakRelay.Installer.Core.PayloadNames.PluginSets)
         foreach (var dll in dlls)

@@ -45,15 +45,16 @@ public static class PluginDeployer
         var log = new List<string>();
         var core = Path.Combine(Layout.BepInExDir(gameDir), "core");
         var marker = Path.Combine(core, "BepInEx.dll");
+        var gameRoot = Path.GetFullPath(gameDir);
+
         if (File.Exists(marker))
         {
             log.Add($"BepInEx already present: {core}");
-            return log;
         }
-
-        var count = 0;
-        var gameRoot = Path.GetFullPath(gameDir);
-        using (var zip = OpenPayload(PayloadNames.BepInExZip))
+        else
+        {
+            var count = 0;
+            using (var zip = OpenPayload(PayloadNames.BepInExZip))
         using (var archive = new ZipArchive(zip, ZipArchiveMode.Read))
         {
             foreach (var entry in archive.Entries)
@@ -68,10 +69,21 @@ public static class PluginDeployer
                 entry.ExtractToFile(target, overwrite: true);
                 count++;
             }
+            }
+            if (!File.Exists(marker))
+                throw new InvalidOperationException($"BepInEx extraction finished but {marker} is missing");
+            log.Add($"BepInEx {BepInExVersion} extracted ({count} files)");
         }
-        if (!File.Exists(marker))
-            throw new InvalidOperationException($"BepInEx extraction finished but {marker} is missing");
-        log.Add($"BepInEx {BepInExVersion} extracted ({count} files)");
+
+        // Doorstop 4.5.0 proxy: BepInEx 5.4.23.2 ships 4.3.0 (2024), whose winhttp.dll
+        // native-crashes the 2026-09 PEAK update during injection (before any BepInEx log).
+        // ALWAYS overwrite the game's winhttp.dll last — the BepInEx zip ships its own
+        // 4.3.0 winhttp.dll at the archive root and would clobber an earlier copy (caught
+        // by a byte-compare against the payload during the crash fix).
+        using (var loader = OpenPayload(PayloadNames.DoorstopWinhttp))
+        using (var output = File.Create(Path.Combine(gameRoot, "winhttp.dll")))
+            loader.CopyTo(output);
+        log.Add("Doorstop 4.5.0 loader installed (winhttp.dll)");
         return log;
     }
 
