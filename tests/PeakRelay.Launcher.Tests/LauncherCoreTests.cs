@@ -325,7 +325,7 @@ public sealed class ModApplyTests : IDisposable
 
         await Assert.ThrowsAsync<InvalidDataException>(() => ModApply.ApplyAsync(_gameDir, asset, state, "v0.5.0",
             (_, destination, _) => { File.WriteAllBytes(destination, bytes); return Task.FromResult((long)bytes.Length); },
-            serverSettings: null, clientSettings: null));
+            host: "127.0.0.1", port: 5055));
     }
 
     private static void Add(ZipArchive zip, string name)

@@ -201,9 +201,9 @@ public sealed class MainForm : Form
         var asset = ModApply.DefaultAssetFor(latest);
         Log($"latest: {latest.Tag} → {asset.Name}");
 
-        var settings = ModApply.ConfigFor(gameDir, host: "127.0.0.1", port: 5055);
         foreach (var line in await ModApply.ApplyAsync(gameDir, asset, _state, latest.Tag,
-                     (a, destination, t) => client.DownloadAsync(a, destination, t), settings.Server, settings.Client).ConfigureAwait(true))
+                     (a, destination, t) => client.DownloadAsync(a, destination, t),
+                     host: "127.0.0.1", port: 5055).ConfigureAwait(true))
             Log("  " + line);
 
         Log($"applied {latest.Tag}.");

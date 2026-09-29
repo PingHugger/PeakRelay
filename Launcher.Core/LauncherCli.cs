@@ -218,10 +218,9 @@ public static class LauncherCli
             }
         }
 
-        var (server, clientSettings) =
-            ModApply.ConfigFor(gameDir, args.Host, args.Port, args.Room, args.Password, args.Hostname, args.Max);
         var log = await ModApply.ApplyAsync(gameDir, asset, state, latest.Tag,
-            (a, destination, t) => client.DownloadAsync(a, destination, t), server, clientSettings).ConfigureAwait(false);
+            (a, destination, t) => client.DownloadAsync(a, destination, t),
+            args.Host, args.Port, args.Room, args.Password, args.Hostname, args.Max).ConfigureAwait(false);
         foreach (var line in log)
             Console.WriteLine("  " + line);
 
