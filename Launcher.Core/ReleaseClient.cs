@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Reflection;
 using System.Text.Json;
 using System.Threading;
@@ -11,24 +12,23 @@ using System.Threading.Tasks;
 namespace PeakRelay.Launcher.Core;
 
 /// <summary>One downloadable file attached to a release.</summary>
-public sealed record ReleaseAsset(string Name, long Size, string Url);
+public sealed record ReleaseAsset(string Name, long Size, long Id, string Url);
 
 /// <summary>One GitHub release, reduced to what the launcher needs.</summary>
 public sealed record ReleaseInfo(string Tag, string Name, bool Prerelease, IReadOnlyList<ReleaseAsset> Assets);
 
 /// <summary>
 /// Talks to api.github.com for the PingHugger/PeakRelay releases — the launcher's update
-/// channel. No auth: releases on a public repo are readable anonymously, and the personal
-/// token from the dev machine never leaks into a shipped binary.
+/// channel. On a public repo everything works anonymously. On a private repo the release
+/// API 404s without credentials; set PEAKRELAY_GH_TOKEN (classic PAT with `repo` read or
+/// fine-grained read-only contents) and the launcher authenticates. The token is read
+/// from the environment at runtime only — it is never embedded in or persisted by the
+/// shipped binary.
 /// </summary>
 public sealed class ReleaseClient : IDisposable
 {
     public const string Repo = "PingHugger/PeakRelay";
-
-    private static readonly JsonSerializerOptions Json = new()
-    {
-        PropertyNameCaseInsensitive = true,
-    };
+    public const string TokenEnvVar = "PEAKRELAY_GH_TOKEN";
 
     private readonly HttpClient _http;
 
@@ -39,6 +39,16 @@ public sealed class ReleaseClient : IDisposable
         if (_http.DefaultRequestHeaders.UserAgent.Count == 0)
             _http.DefaultRequestHeaders.UserAgent.ParseAdd("PeakRelay-Launcher");
         _http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+        var token = TokenFromEnvironment();
+        if (token != null)
+            _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+    }
+
+    /// <summary>The env token, or null. Whitespace-only counts as unset.</summary>
+    public static string? TokenFromEnvironment()
+    {
+        var value = Environment.GetEnvironmentVariable(TokenEnvVar);
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
     /// <summary>The newest non-draft release (prereleases included, flagged).</summary>
@@ -46,7 +56,7 @@ public sealed class ReleaseClient : IDisposable
     {
         using var response = await _http.GetAsync("releases/latest", token).ConfigureAwait(false);
         if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
-            return null; // repo with no releases yet
+            return null; // repo with no releases yet (or private without a token)
         response.EnsureSuccessStatusCode();
         await using var stream = await response.Content.ReadAsStreamAsync(token).ConfigureAwait(false);
         using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: token).ConfigureAwait(false);
@@ -63,12 +73,13 @@ public sealed class ReleaseClient : IDisposable
         return doc.RootElement.EnumerateArray().Select(Decode).ToList();
     }
 
-    private static ReleaseInfo Decode(JsonElement element)
+    internal static ReleaseInfo Decode(JsonElement element)
     {
         var assets = element.GetProperty("assets").EnumerateArray()
             .Select(a => new ReleaseAsset(
                 a.GetProperty("name").GetString() ?? "",
                 a.GetProperty("size").GetInt64(),
+                a.GetProperty("id").GetInt64(),
                 a.GetProperty("browser_download_url").GetString() ?? ""))
             .ToList();
         return new ReleaseInfo(
@@ -118,12 +129,19 @@ public sealed class ReleaseClient : IDisposable
                && version.Split('-')[0].Split('.').All(part => int.TryParse(part, out _));
     }
 
-    /// <summary>Streams an asset to destinationPath (download-to-temp-then-move semantics are
-    /// the caller's job). Returns bytes written.</summary>
+    /// <summary>
+    /// Streams an asset to destinationPath. Private repos cannot fetch the
+    /// browser_download_url (it needs a web session), so assets are fetched through the
+    /// API endpoint with Accept: application/octet-stream — GitHub then serves the raw
+    /// binary under the same authorization. Public repos behave identically through this
+    /// endpoint, so one code path serves both.
+    /// </summary>
     public async Task<long> DownloadAsync(ReleaseAsset asset, string destinationPath,
         CancellationToken token = default, Action<long>? onProgress = null)
     {
-        using var response = await _http.GetAsync(asset.Url, HttpCompletionOption.ResponseHeadersRead, token)
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"releases/assets/{asset.Id}");
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/octet-stream"));
+        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token)
             .ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         await using var source = await response.Content.ReadAsStreamAsync(token).ConfigureAwait(false);

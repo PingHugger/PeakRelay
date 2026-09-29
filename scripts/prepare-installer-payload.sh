@@ -29,10 +29,29 @@ PAYLOAD="$ROOT/Installer.Core/Payload/payload"
 rm -rf "$PAYLOAD"
 mkdir -p "$PAYLOAD/plugins/Dedicated" "$PAYLOAD/plugins/Client"
 
+# CI runners may lack unzip (Git Bash usually ships it); PowerShell covers the rest.
+have_unzip() { command -v unzip > /dev/null 2>&1; }
+verify_zip() {   # verify_zip <file> — fail early on a truncated/corrupt download
+    if have_unzip; then
+        unzip -q -t "$1" > /dev/null
+    else
+        powershell -NoProfile -Command "Add-Type -AssemblyName System.IO.Compression.FileSystem; \
+            \$z = [IO.Compression.ZipFile]::OpenRead('$(cygpath -w "$1")'); \
+            if (\$z.Entries.Count -lt 1) { exit 1 }; \$z.Dispose()"
+    fi
+}
+extract_whole() {  # extract_whole <zip> <destdir>
+    if have_unzip; then
+        unzip -q -o "$1" -d "$2"
+    else
+        powershell -NoProfile -Command "Expand-Archive -Path '$(cygpath -w "$1")' -DestinationPath '$(cygpath -w "$2")' -Force"
+    fi
+}
+
 echo ">> fetching BepInEx 5.4.23.2 (win_x64)"
 curl -sL -o "$PAYLOAD/bepinex.zip" \
     "https://github.com/BepInEx/BepInEx/releases/download/v5.4.23.2/BepInEx_win_x64_5.4.23.2.zip"
-unzip -q -t "$PAYLOAD/bepinex.zip"   # fail early on a truncated download
+verify_zip "$PAYLOAD/bepinex.zip"
 
 # Doorstop 4.5.0 loader: BepInEx 5.4.23.2 bundles Doorstop 4.3.0 (2024), whose proxy DLL
 # crashes the 2026-09 PEAK update (native crash in the injected winhttp.dll before BepInEx
@@ -40,7 +59,8 @@ unzip -q -t "$PAYLOAD/bepinex.zip"   # fail early on a truncated download
 echo ">> fetching Doorstop 4.5.0 (win_x64 loader)"
 curl -sL -o /tmp/doorstop.zip \
     "https://github.com/NeighTools/UnityDoorstop/releases/download/v4.5.0/doorstop_win_release_4.5.0.zip"
-unzip -q -o /tmp/doorstop.zip -d /tmp/doorstop x64/winhttp.dll
+rm -rf /tmp/doorstop
+extract_whole /tmp/doorstop.zip /tmp/doorstop
 mkdir -p "$PAYLOAD/doorstop"
 cp /tmp/doorstop/x64/winhttp.dll "$PAYLOAD/doorstop/winhttp.dll"
 

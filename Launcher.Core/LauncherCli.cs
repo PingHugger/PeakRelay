@@ -248,6 +248,11 @@ public static class LauncherCli
         using var client = new ReleaseClient();
         var latest = await client.LatestAsync().ConfigureAwait(false)
             ?? throw new InvalidOperationException("no releases found");
+        if (!ReleaseClient.VersionDiffers(latest.Tag, ReleaseClient.RunningVersion()))
+        {
+            Console.WriteLine($"already on {latest.Tag} — nothing to self-update");
+            return 0;
+        }
         var asset = latest.Assets.FirstOrDefault(a => a.Name.StartsWith("PeakRelayLauncher", StringComparison.OrdinalIgnoreCase)
                                                       && a.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase));
         if (asset == null)
@@ -256,6 +261,7 @@ public static class LauncherCli
             return 1;
         }
         var temp = Path.Combine(Path.GetTempPath(), asset.Name);
+        Console.WriteLine($"downloading {asset.Name} ({asset.Size / 1024 / 1024} MB)…");
         await client.DownloadAsync(asset, temp).ConfigureAwait(false);
         Console.WriteLine($"launching {asset.Name}…");
         Process.Start(new ProcessStartInfo { FileName = temp, UseShellExecute = true });

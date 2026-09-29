@@ -55,6 +55,24 @@ public class ReleaseClientTests
     }
 
     [Fact]
+    public void TokenFromEnvironment_reads_and_trims_env_only()
+    {
+        Environment.SetEnvironmentVariable(ReleaseClient.TokenEnvVar, "  tok_abc  ");
+        try
+        {
+            Assert.Equal("tok_abc", ReleaseClient.TokenFromEnvironment());
+            Environment.SetEnvironmentVariable(ReleaseClient.TokenEnvVar, "   ");
+            Assert.Null(ReleaseClient.TokenFromEnvironment());
+            Environment.SetEnvironmentVariable(ReleaseClient.TokenEnvVar, null);
+            Assert.Null(ReleaseClient.TokenFromEnvironment());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ReleaseClient.TokenEnvVar, null);
+        }
+    }
+
+    [Fact]
     public void Decode_parses_github_release_payload()
     {
         // The exact shape api.github.com returns for /releases/latest (subset).
@@ -64,7 +82,7 @@ public class ReleaseClientTests
               "name": "0.6.0",
               "prerelease": false,
               "assets": [
-                { "name": "PeakRelay-plugins.zip", "size": 12345,
+                { "name": "PeakRelay-plugins.zip", "size": 12345, "id": 987654321,
                   "browser_download_url": "https://example.com/PeakRelay-plugins.zip" }
               ]
             }
@@ -78,8 +96,9 @@ public class ReleaseClientTests
         Assert.Equal("v0.6.0", decoded!.Tag);
         Assert.False(decoded.Prerelease);
         var asset = Assert.Single(decoded.Assets);
-        Assert.Equal(("PeakRelay-plugins.zip", 12345L, "https://example.com/PeakRelay-plugins.zip"),
-            (asset.Name, asset.Size, asset.Url));
+        Assert.Equal(("PeakRelay-plugins.zip", 12345L, 987654321L,
+                "https://example.com/PeakRelay-plugins.zip"),
+            (asset.Name, asset.Size, asset.Id, asset.Url));
     }
 }
 
@@ -248,7 +267,7 @@ public sealed class ModApplyTests : IDisposable
         using (var zip = new ZipArchive(File.Create(zipPath), ZipArchiveMode.Create))
             Add(zip, "readme.txt");
 
-        var asset = new ReleaseAsset("PeakRelay-plugins.zip", 999, "unused://");
+        var asset = new ReleaseAsset("PeakRelay-plugins.zip", 999, 42, "unused://");
         var state = new LauncherState();
         var bytes = File.ReadAllBytes(zipPath);
 

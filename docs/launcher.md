@@ -49,7 +49,10 @@ Shared flags: `--dir <path>` (game root), server-side `--room --name --max --pas
 ## Update channel
 
 The launcher polls `https://api.github.com/repos/PingHugger/PeakRelay/releases/latest`
-(no auth, no token) on start and every 20 s. A release counts as an update when its tag
+on start and every 20 s. On a **public** repo this is fully anonymous. While the repo is
+**private**, set `PEAKRELAY_GH_TOKEN` (read-only contents PAT) in the environment — the
+launcher authenticates API reads and asset downloads with it; the token is never embedded
+in or persisted by the binary. A release counts as an update when its tag
 parses to a different version than the running exe (`v0.6.0` ↔ `0.6.0` are equal;
 prerelease tags like `v0.7.0-beta.1` count as updates). Declined updates are remembered
 (`SkippedTag` in `launcher.json`) and not re-nagged. `selfupdate` downloads
