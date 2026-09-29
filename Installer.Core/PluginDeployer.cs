@@ -164,8 +164,11 @@ public static class PluginDeployer
             .AppendLine($"## Relay server address.")
             .AppendLine($"Host = {settings.RelayHost}")
             .AppendLine()
-            .AppendLine($"## Relay server TCP port.")
+            .AppendLine($"## Relay server TCP port (game protocol).")
             .AppendLine($"Port = {settings.RelayPort}")
+            .AppendLine()
+            .AppendLine($"## Relay HTTP directory port (server browser).")
+            .AppendLine($"DirectoryPort = {settings.DirectoryPort}")
             .AppendLine()
             .ToString());
         return path;
@@ -185,4 +188,4 @@ public sealed record ServerSettings(
     string HostName);
 
 /// <summary>Client config values the client installer writes.</summary>
-public sealed record ClientSettings(string RelayHost, int RelayPort);
+public sealed record ClientSettings(string RelayHost, int RelayPort, int DirectoryPort = 5056);

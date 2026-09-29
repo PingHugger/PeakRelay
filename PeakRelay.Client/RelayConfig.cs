@@ -14,8 +14,14 @@ public static class RelayConfig
     /// <summary>Relay address clients connect to (master and game roles are the same endpoint).</summary>
     public static string Host { get; private set; } = "127.0.0.1";
 
-    /// <summary>Relay TCP port.</summary>
+    /// <summary>Relay TCP port (game protocol: PUN envelopes).</summary>
     public static int Port { get; private set; } = 5055;
+
+    /// <summary>
+    /// Relay HTTP directory port (server browser feeds). This is a DIFFERENT listener than
+    /// the game protocol port — fetching /api/servers from the game port can never work.
+    /// </summary>
+    public static int DirectoryPort { get; private set; } = 5056;
 
     /// <summary>
     /// True once we've rewritten PhotonServerSettings for this session: AppId and
@@ -39,7 +45,11 @@ public static class RelayConfig
             .Value;
 
         Port = file.Bind("Relay", "Port", 5055,
-            "Relay server TCP port.")
+            "Relay server TCP port (game protocol).")
+            .Value;
+
+        DirectoryPort = file.Bind("Relay", "DirectoryPort", 5056,
+            "Relay HTTP directory port (server browser).")
             .Value;
 
         TraceEnabled = file.Bind("Trace", "Enabled", false,
