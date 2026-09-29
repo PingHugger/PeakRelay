@@ -18,7 +18,10 @@
     "installers cannot build stale" guard lives on the installer projects, which are
     only ever built to ship.
   -->
-  <ItemGroup>
+  <!-- Embedded payload: present → embed everything; absent (CI standalone build)
+       → embed nothing (csc must not be handed missing /resource: paths — CS1566).
+       Payload tests self-skip; the installer projects guard separately. -->
+  <ItemGroup Condition="Exists('Payload/payload/bepinex.zip')">
     <EmbeddedResource Include="Payload/payload/bepinex.zip"
                       LogicalName="PeakRelay.Installer.Payload.bepinex.zip" />
     <EmbeddedResource Include="Payload/payload/doorstop/winhttp.dll"
