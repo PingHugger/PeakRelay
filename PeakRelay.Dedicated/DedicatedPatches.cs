@@ -243,4 +243,24 @@ public static class DedicatedPatches
                            $"open={room?.IsOpen} visible={room?.IsVisible}");
         }
     }
+
+    /// <summary>
+    /// Under -nographics the scene's compressed lightmap cannot create its Texture3D
+    /// (UnityException in CompressableLightMap.ConstructUncompressedLightMap — a live
+    /// no-Steam run), leaving LightVolume broken; VoiceObscuranceFilter then NREs from
+    /// Start and on EVERY Update (123k exceptions in a two-minute live run, all after the
+    /// room was up and healthy). The filter is voice-audio cosmetics a server never
+    /// renders; skip both methods headless.
+    /// </summary>
+    [HarmonyPatch(typeof(VoiceObscuranceFilter))]
+    internal static class VoiceObscuranceFilterSilencePatch
+    {
+        [HarmonyPatch("Start")]
+        [HarmonyPrefix]
+        public static bool SkipStart() => !IsHeadless;
+
+        [HarmonyPatch("Update")]
+        [HarmonyPrefix]
+        public static bool SkipUpdate() => !IsHeadless;
+    }
 }

@@ -25,6 +25,18 @@ public sealed class DedicatedConfig
     public bool UseVanillaName { get; init; } = false;
     public bool LogDatagrams { get; init; } = false;
 
+    /// <summary>
+    /// Run without Steam: injects the game's own "NoSteam" play-mode tag (the game then
+    /// skips SteamManager/SteamLobbyHandler entirely and falls back to NoMatchmaking,
+    /// NoRichPresence and a PlayerPrefs UserID) and guards the few unguarded Steamworks
+    /// native calls. null = auto: enabled when the process is headless, off for normal
+    /// windowed play.
+    /// </summary>
+    public bool? NoSteam { get; init; }
+
+    /// <summary>Player name used when Steam cannot provide a persona name (noSteam mode).</summary>
+    public string HostName { get; init; } = "DedicatedHost";
+
     public static DedicatedConfig Load(string pluginDir)
     {
         var config = new DedicatedConfig();
@@ -66,6 +78,8 @@ public sealed class DedicatedConfig
             AutoHost = B("autoHost") ?? config.AutoHost,
             UseVanillaName = B("useVanillaName") ?? config.UseVanillaName,
             LogDatagrams = B("logDatagrams") ?? config.LogDatagrams,
+            NoSteam = B("noSteam") ?? config.NoSteam,
+            HostName = S("hostName") ?? config.HostName,
         };
     }
 
@@ -89,6 +103,8 @@ public sealed class DedicatedConfig
             AutoHost = EnvBool("PEAKRELAY_AUTOHOST") ?? config.AutoHost,
             UseVanillaName = EnvBool("PEAKRELAY_USEVANILLANAME") ?? config.UseVanillaName,
             LogDatagrams = EnvBool("PEAKRELAY_LOGDATAGRAMS") ?? config.LogDatagrams,
+            NoSteam = EnvBool("PEAKRELAY_NOSTEAM") ?? config.NoSteam,
+            HostName = Env("PEAKRELAY_HOSTNAME") ?? config.HostName,
         };
     }
 }

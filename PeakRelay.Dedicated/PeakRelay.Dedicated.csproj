@@ -59,6 +59,19 @@
       <HintPath>..\lib\Platforms.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <!-- Steamworks.NET + game Steam runtime + Unity play-mode tags (no-Steam dedicated mode) -->
+    <Reference Include="Steamworks.NET">
+      <HintPath>..\lib\com.rlabrecque.steamworks.net.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="SteamCommon">
+      <HintPath>..\lib\SteamCommon.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.MultiplayerModule">
+      <HintPath>..\lib\UnityEngine.MultiplayerModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <!-- game-shipped JSON stack for server.json parsing -->
     <Reference Include="Newtonsoft.Json">
       <HintPath>..\lib\Newtonsoft.Json.dll</HintPath>

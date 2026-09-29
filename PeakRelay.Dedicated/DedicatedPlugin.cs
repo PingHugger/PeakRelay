@@ -64,10 +64,12 @@ public sealed class DedicatedPlugin : BaseUnityPlugin
             return;
         }
 
+        var noSteam = SteamBypassPatch.NoSteamActive;
         ServerLog.Info($"config: room={_config.RoomName} display='{_config.DisplayName}' mode={_config.Mode} " +
                        $"password={(string.IsNullOrEmpty(_config.Password) ? "no" : "yes")} maxPlayers={_config.MaxPlayers} " +
                        $"visible={_config.Visible} open={_config.Open} relay={_config.RelayHost}:{_config.RelayPort} " +
-                       $"autoHost={_config.AutoHost} useVanillaName={_config.UseVanillaName}");
+                       $"autoHost={_config.AutoHost} useVanillaName={_config.UseVanillaName} " +
+                       $"noSteam={noSteam}{(noSteam ? $" hostName='{_config.HostName}'" : "")}");
         StartCoroutine(Boot());
     }
 

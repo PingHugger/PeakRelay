@@ -241,7 +241,9 @@ public sealed class LbDispatcher
 
             // game-server entry response: {255: name, 254: actorNr, 252: actorList, 249: joiner
             // props, 248: room props} — Realtime's GameEnteredOnGameServer reads 249/248 and
-            // feeds ReadoutProperties, so joiners learn custom room metadata (N/M/P) at join.
+            // feeds ReadoutProperties with targetActorNr=0, where 249 MUST be nested
+            // {actorNr: {props}} (live run: a flat table hit '(int)key' InvalidCastException
+            // on the joiner's string keys and aborted the game-entry op response).
             var actorList = new int[room.Actors.Count];
             int i = 0;
             foreach (var key in room.Actors.Keys)
@@ -251,7 +253,10 @@ public sealed class LbDispatcher
                 [LbParam.RoomName] = roomName,
                 [LbParam.ActorNr] = peer.ActorNumber,
                 [LbParam.ActorList] = actorList,
-                [LbParam.PlayerProperties] = CopyOf(peer.PlayerProperties),
+                [LbParam.PlayerProperties] = new Hashtable
+                {
+                    [peer.ActorNumber] = CopyOf(peer.PlayerProperties),
+                },
                 [LbParam.GameProperties] = room.SnapshotGameProperties(),
             });
 
