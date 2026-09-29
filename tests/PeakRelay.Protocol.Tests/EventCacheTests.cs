@@ -1,3 +1,4 @@
+using System.Linq;
 using PeakRelay.Protocol;
 using PeakRelay.Server;
 using Xunit;
@@ -38,10 +39,19 @@ public sealed class EventCacheTests
         }, RelayServerRole.Game);
         Assert.Equal(1, host.ActorNumber);
 
+        // A spectator is already in the room and must ALSO receive the cached raise
+        // (Photon Cloud stores AND delivers; store-only would blind current members).
+        var spectator = NewPeer(new EnetPeer());
+        dispatcher.Dispatch(spectator, Join("cache-room"), RelayServerRole.Game);
+        DrainEvents(spectator); // its own join event etc.
+
         dispatcher.Dispatch(host, Raise(200, cacheOp: 4, "instantiate-1"), RelayServerRole.Game);
         dispatcher.Dispatch(host, Raise(202, cacheOp: 5, "rpc-1"), RelayServerRole.Game);
-        Assert.Equal(2, dispatcher.SnapshotRoomStates()[0].Name != null ? 2 : 0); // smoke
         Assert.Equal(2, RoomCacheCount(dispatcher, "cache-room"));
+
+        var spectatorEvents = DrainEvents(spectator).Select(e => e.Code).ToList();
+        Assert.Contains((byte)200, spectatorEvents);
+        Assert.Contains((byte)202, spectatorEvents);
 
         // The joiner gets the room-entry response, its join event, THEN the replay.
         dispatcher.Dispatch(joiner, new LbRequest
