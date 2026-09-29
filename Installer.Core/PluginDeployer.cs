@@ -1,0 +1,165 @@
+using System.IO;
+using System.IO.Compression;
+using System.Reflection;
+using System.Text;
+
+namespace PeakRelay.Installer.Core;
+
+/// <summary>Where BepInEx and plugin files land inside a game install.</summary>
+public static class Layout
+{
+    public static string BepInExDir(string gameDir) => Path.Combine(gameDir, "BepInEx");
+    public static string PluginsDir(string gameDir) => Path.Combine(BepInExDir(gameDir), "plugins");
+    public static string ConfigDir(string gameDir) => Path.Combine(BepInExDir(gameDir), "config");
+    public static string DedicatedPluginDir(string gameDir) => Path.Combine(PluginsDir(gameDir), "PeakRelay.Dedicated");
+    public static string ClientPluginDir(string gameDir) => Path.Combine(PluginsDir(gameDir), "PeakRelay.Client");
+    public static string ServerLog(string gameDir) => Path.Combine(DedicatedPluginDir(gameDir), "server.log");
+}
+
+/// <summary>
+/// All install operations, driven identically by the GUI wizards and the CLI flags.
+/// Everything is idempotent: re-running overwrites payloads and config, touches nothing else.
+/// </summary>
+public static class PluginDeployer
+{
+    public const string BepInExVersion = "5.4.23.2";
+
+    /// <summary>
+    /// Opens an embedded payload resource. Resources are embedded in the installer *exe*
+    /// (the payload differs per installer), so probe the entry assembly first and fall
+    /// back to the executing one for tests.
+    /// </summary>
+    public static Stream OpenPayload(string relativePath)
+    {
+        var name = $"PeakRelay.Installer.Payload.{relativePath.Replace('/', '.').Replace('\\', '.')}";
+        var stream = Assembly.GetEntryAssembly()?.GetManifestResourceStream(name)
+                     ?? Assembly.GetExecutingAssembly().GetManifestResourceStream(name);
+        if (stream == null)
+            throw new FileNotFoundException($"embedded payload missing: {name} (rebuild with scripts/prepare-installer-payload.sh)");
+        return stream;
+    }
+
+    /// <summary>Installs BepInEx 5.4.23.2 into the game root if not already present.</summary>
+    public static List<string> EnsureBepInEx(string gameDir)
+    {
+        var log = new List<string>();
+        var core = Path.Combine(Layout.BepInExDir(gameDir), "core");
+        var marker = Path.Combine(core, "BepInEx.dll");
+        if (File.Exists(marker))
+        {
+            log.Add($"BepInEx already present: {core}");
+            return log;
+        }
+
+        var count = 0;
+        using (var zip = OpenPayload(PayloadNames.BepInExZip))
+        {
+            count = Zip.Extract(zip, string.Empty, gameDir);
+        }
+        if (!File.Exists(marker))
+            throw new InvalidOperationException($"BepInEx extraction finished but {marker} is missing");
+        log.Add($"BepInEx {BepInExVersion} extracted ({count} files)");
+        return log;
+    }
+
+    /// <summary>Copies embedded plugin DLLs into BepInEx/plugins/&lt;dir&gt;.</summary>
+    public static List<string> DeployPlugins(string gameDir, string payloadDir, string targetDirName)
+    {
+        var log = new List<string>();
+        var target = Path.Combine(Layout.PluginsDir(gameDir), targetDirName);
+        Directory.CreateDirectory(target);
+
+        using (var stream = OpenPayload(payloadDir))
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Read))
+        {
+            // plugin dirs are embedded as a zip so multiple DLLs ship as one resource
+            foreach (var entry in archive.Entries)
+            {
+                if (string.IsNullOrEmpty(entry.Name))
+                    continue;
+                var file = Path.Combine(target, entry.Name);
+                Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+                entry.ExtractToFile(file, overwrite: true);
+                log.Add($"deployed {targetDirName}/{entry.Name}");
+            }
+        }
+        return log;
+    }
+
+    /// <summary>Deploy the dedicated-host plugin set.</summary>
+    public static List<string> DeployDedicated(string gameDir) =>
+        DeployPlugins(gameDir, PayloadNames.DedicatedZip, "PeakRelay.Dedicated");
+
+    /// <summary>Deploy the client plugin set.</summary>
+    public static List<string> DeployClient(string gameDir) =>
+        DeployPlugins(gameDir, PayloadNames.ClientZip, "PeakRelay.Client");
+
+    /// <summary>Writes server.json next to the dedicated plugin. Returns the file path.</summary>
+    public static string WriteServerConfig(string gameDir, ServerSettings settings)
+    {
+        var dir = Layout.DedicatedPluginDir(gameDir);
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "server.json");
+
+        string J(string s) => s.Replace("\\", "\\\\").Replace("\"", "\\\"");
+        var json = new StringBuilder()
+            .AppendLine("{")
+            .AppendLine($"  \"roomName\": \"{J(settings.RoomName)}\",")
+            .AppendLine($"  \"displayName\": \"{J(settings.DisplayName)}\",")
+            .AppendLine($"  \"mode\": \"{J(settings.Mode)}\",")
+            .AppendLine($"  \"password\": \"{J(settings.Password)}\",")
+            .AppendLine($"  \"maxPlayers\": {settings.MaxPlayers},")
+            .AppendLine("  \"visible\": true,")
+            .AppendLine("  \"open\": true,")
+            .AppendLine($"  \"relayHost\": \"{J(settings.RelayHost)}\",")
+            .AppendLine($"  \"relayPort\": {settings.RelayPort},")
+            .AppendLine($"  \"autoHost\": {(settings.AutoHost ? "true" : "false")},")
+            .AppendLine("  \"useVanillaName\": false,")
+            .AppendLine("  \"logDatagrams\": false,")
+            .AppendLine("  \"noSteam\": null,")
+            .AppendLine($"  \"hostName\": \"{J(settings.HostName)}\"")
+            .AppendLine("}")
+            .ToString();
+        File.WriteAllText(path, json);
+        return path;
+    }
+
+    /// <summary>Writes the BepInEx config for the client plugin. Returns the file path.</summary>
+    public static string WriteClientConfig(string gameDir, ClientSettings settings)
+    {
+        Directory.CreateDirectory(Layout.ConfigDir(gameDir));
+        var path = Path.Combine(Layout.ConfigDir(gameDir), "com.peakrelay.client.cfg");
+        File.WriteAllText(path, new StringBuilder()
+            .AppendLine("## Settings generated by the PeakRelay installer")
+            .AppendLine()
+            .AppendLine("[Relay]")
+            .AppendLine()
+            .AppendLine($"## Route PUN through the PeakRelay relay (TCP envelopes). false = vanilla Photon Cloud UDP.")
+            .AppendLine($"# Acceptable values: True, False")
+            .AppendLine("Enabled = True")
+            .AppendLine()
+            .AppendLine($"## Relay server address.")
+            .AppendLine($"Host = {settings.RelayHost}")
+            .AppendLine()
+            .AppendLine($"## Relay server TCP port.")
+            .AppendLine($"Port = {settings.RelayPort}")
+            .AppendLine()
+            .ToString());
+        return path;
+    }
+}
+
+/// <summary>server.json values the server installer writes.</summary>
+public sealed record ServerSettings(
+    string RoomName,
+    string DisplayName,
+    string Mode,
+    string Password,
+    int MaxPlayers,
+    string RelayHost,
+    int RelayPort,
+    bool AutoHost,
+    string HostName);
+
+/// <summary>Client config values the client installer writes.</summary>
+public sealed record ClientSettings(string RelayHost, int RelayPort);

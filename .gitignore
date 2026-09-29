@@ -9,13 +9,16 @@ obj/
 references/
 
 # Reference assemblies, provisioned by scripts/fetch-libs.sh — never redistribute
-game or
-# framework binaries
+# game or framework binaries
 lib/
 
+# Portable SDK + local dotnet-tools (downloaded, not committed)
 tools/dl/
 tools/dotnet/
 tools/dotnet-tools/
+
+# Installer embed payload (regenerate with scripts/prepare-installer-payload.sh)
+tools/payload/
 
 # Release output (regenerate with scripts/publish.sh)
 dist/

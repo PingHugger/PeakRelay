@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>12</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RootNamespace>PeakRelay.Installer.Server</RootNamespace>
+    <AssemblyName>PeakRelayInstaller-Server</AssemblyName>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Installer.Core\Installer.Core.csproj" />
+  </ItemGroup>
+
+  <!-- embedded payload: tools/payload/** -> PeakRelay.Installer.Payload.* (fail on missing) -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\tools\payload\bepinex.zip" LogicalName="PeakRelay.Installer.Payload.bepinex.zip" />
+    <EmbeddedResource Include="..\tools\payload\plugins\Dedicated.zip" LogicalName="PeakRelay.Installer.Payload.plugins.Dedicated.zip" />
+    <EmbeddedResource Include="..\tools\payload\relay.zip" LogicalName="PeakRelay.Installer.Payload.relay.relay.zip" />
+  </ItemGroup>
+
+</Project>

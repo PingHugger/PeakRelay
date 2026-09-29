@@ -24,8 +24,10 @@ your own server, and `docs/client-guide.md` for the player-side mod.
 | `tests/PeakRelay.Protocol.Tests/` | Protocol unit tests (framing, P16 codec, datagram parsing) |
 | `references/` | Decompiled shipped assemblies (Photon3, PUN, game code) — recon evidence |
 | `lib/` | Reference assemblies used for compiling the plugins (`scripts/fetch-libs.sh`) |
-| `scripts/` | fetch-libs, publish, peak-server (dedicated install/run/status) |
-| `docs/` | protocol-notes, ops-inventory, host-guide |
+| `Installer.Core/` | shared installer engine: embedded BepInEx/plugin/relay payloads, config writers, verification |
+| `Installer.Server/`, `Installer.Client/` | one-click Windows GUI installers (also scriptable via CLI flags) |
+| `scripts/` | fetch-libs, publish, peak-server (dedicated install/run/status), prepare-installer-payload |
+| `docs/` | protocol-notes, ops-inventory, host-guide, client-guide, installers |
 
 ## Quick start
 
@@ -38,6 +40,10 @@ dotnet run --project PeakRelay.Server -- 5055 5056
 scripts/peak-server.sh install
 scripts/peak-server.sh run
 ```
+
+Windows one-click alternative: run `dist/installers/PeakRelayInstaller-Server.exe` and
+`PeakRelayInstaller-Client.exe` (see `docs/installers.md`). The dedicated host runs with
+Steam closed; players install the client plugin and join via the in-game SERVERS browser.
 
 Players join with the room code in PEAK's standard join UI or the in-game **SERVERS**
 browser page. Full guide incl. Docker and troubleshooting: `docs/host-guide.md`;
