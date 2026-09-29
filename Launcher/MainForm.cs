@@ -179,10 +179,25 @@ public sealed class MainForm : Form
             return;
         }
         _install.Enabled = false;
-        Log("checking releases.github.com…");
+        Log("checking release channel…");
         using var client = new ReleaseClient();
-        var latest = await client.LatestAsync().ConfigureAwait(true)
+        ReleaseInfo latest;
+        try
+        {
+            latest = await client.LatestAsync().ConfigureAwait(true)
                      ?? throw new InvalidOperationException("no releases found — nothing to install");
+        }
+        catch (ReleaseChannelException ex)
+        {
+            Log($"error: {ex.Message}");
+            if (PromptForToken())
+            {
+                Log("token saved — retrying…");
+                client.Dispose();
+                await InstallAsync().ConfigureAwait(true);
+            }
+            return;
+        }
         var asset = ModApply.DefaultAssetFor(latest);
         Log($"latest: {latest.Tag} → {asset.Name}");
 
@@ -230,6 +245,22 @@ public sealed class MainForm : Form
             _hostState.Text = "relay failed";
             Log($"relay failed: {ex.Message}");
         }
+    }
+
+    /// <summary>Paste-prompt for a GitHub token (private repo). True when one was saved.</summary>
+    private bool PromptForToken()
+    {
+        string? token = null;
+        var ok = InputDialog.Show(this,
+            "GitHub token required",
+            "The release channel is private. Paste a GitHub token with read access " +
+            "(PEAKRELAY_GH_TOKEN also works):",
+            usePassword: true, value: ref token);
+        if (!ok || string.IsNullOrWhiteSpace(token))
+            return false;
+        TokenStore.SaveToFile(token);
+        Log($"token saved to {LauncherPaths.TokenFile}");
+        return true;
     }
 
     private void Log(string line) =>

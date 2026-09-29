@@ -115,6 +115,14 @@ public static class Doctor
                 "no record for this install (installed outside the launcher?)."));
         }
 
+        // Update channel reachability: token present or anonymous.
+        var hasToken = TokenStore.Resolve() != null;
+        checks.Add(new Check(CheckStatus.Pass, "Release channel",
+            hasToken
+                ? "GitHub token configured (env or token file)."
+                : "anonymous access (fine for public repos; a private repo needs a token).",
+            hasToken ? null : "If the repo is private: 'PeakRelayLauncher.exe set-token'."));
+
         return checks;
     }
 

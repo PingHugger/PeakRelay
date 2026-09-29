@@ -41,6 +41,8 @@ PeakRelayLauncher.exe update                     # only when a newer release exi
 PeakRelayLauncher.exe play                       # doctor gate, then start PEAK
 PeakRelayLauncher.exe host [--port 5055] [--http 5056]
 PeakRelayLauncher.exe selfupdate                 # download + start the newest launcher
+PeakRelayLauncher.exe set-token [--token <pat>]  # store a private-repo read token
+PeakRelayLauncher.exe clear-token                # remove the stored token
 ```
 
 Shared flags: `--dir <path>` (game root), server-side `--room --name --max --password
@@ -48,11 +50,18 @@ Shared flags: `--dir <path>` (game root), server-side `--room --name --max --pas
 
 ## Update channel
 
-The launcher polls `https://api.github.com/repos/PingHugger/PeakRelay/releases/latest`
-on start and every 20 s. On a **public** repo this is fully anonymous. While the repo is
-**private**, set `PEAKRELAY_GH_TOKEN` (read-only contents PAT) in the environment — the
-launcher authenticates API reads and asset downloads with it; the token is never embedded
-in or persisted by the binary. A release counts as an update when its tag
+The launcher checks `https://api.github.com/repos/PingHugger/PeakRelay/releases/latest`
+whenever you Install/Update (GUI or CLI). On a **public** repo this is fully anonymous. While the repo is
+**private**, the launcher needs a read-only GitHub token, in one of two places (env wins):
+
+1. `PEAKRELAY_GH_TOKEN` in the environment, or
+2. `%LOCALAPPDATA%\PeakRelay\github.token` — paste it once via
+   `PeakRelayLauncher.exe set-token` (or the GUI asks for it on the first failed
+   Install/Update), remove with `clear-token`.
+
+The token is used for API reads and asset downloads; it is never embedded in the binary.
+A private/unreachable channel is reported as an explicit error (never as "no releases").
+A release counts as an update when its tag
 parses to a different version than the running exe (`v0.6.0` ↔ `0.6.0` are equal;
 prerelease tags like `v0.7.0-beta.1` count as updates). Declined updates are remembered
 (`SkippedTag` in `launcher.json`) and not re-nagged. `selfupdate` downloads

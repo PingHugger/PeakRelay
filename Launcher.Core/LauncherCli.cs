@@ -30,7 +30,7 @@ public static class LauncherCli
     public sealed class Args
     {
         public string? Dir;
-        public string? Host, Room, Password, Hostname;
+        public string? Host, Room, Password, Hostname, Token;
         public int Port = 5055;
         public int HttpPort = 5056;
         public int Max = 20;
@@ -48,7 +48,7 @@ public static class LauncherCli
         catch (LauncherUsageException ex)
         {
             Console.Error.WriteLine($"error: {ex.Message}");
-            Console.Error.WriteLine("usage: PeakRelay.Launcher [--dir <path>] [--yes] [doctor|install|update|play|host|selfupdate]");
+            Console.Error.WriteLine("usage: PeakRelay.Launcher [--dir <path>] [--yes] [doctor|install|update|play|host|selfupdate|set-token|clear-token]");
             return 2;
         }
 
@@ -62,6 +62,8 @@ public static class LauncherCli
                 "play" => await PlayAsync(args).ConfigureAwait(false),
                 "host" => await HostAsync(args).ConfigureAwait(false),
                 "selfupdate" => await SelfUpdateAsync().ConfigureAwait(false),
+                "set-token" => await SetTokenAsync(args).ConfigureAwait(false),
+                "clear-token" => await ClearTokenAsync().ConfigureAwait(false),
                 _ => throw new LauncherUsageException($"unknown command '{args.Command}'"),
             };
         }
@@ -112,6 +114,7 @@ public static class LauncherCli
                     args.Max = max;
                     break;
                 case "--yes": args.Yes = true; break;
+                case "--token": args.Token = Value("--token"); break;
                 default:
                     if (arguments[i].StartsWith('-'))
                         throw new LauncherUsageException($"unknown flag '{arguments[i]}'");
@@ -129,6 +132,33 @@ public static class LauncherCli
     private static string ResolveDir(Args args, LauncherState state) =>
         args.Dir ?? (string.IsNullOrWhiteSpace(state.GameDir) ? GameLocator.FindDefaultGameDir() : state.GameDir)
         ?? throw new LauncherUsageException("no --dir given, no saved game dir, and no PEAK install found");
+
+    /// <summary>Stores a GitHub token for private-repo channels. Env var still wins.</summary>
+    private static Task<int> SetTokenAsync(Args args)
+    {
+        var token = args.Token;
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            Console.Write("paste GitHub token (stored per-user in %LOCALAPPDATA%\\PeakRelay\\github.token): ");
+            token = Console.ReadLine();
+        }
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            Console.Error.WriteLine("error: no token given (use 'set-token --token <value>' or paste at the prompt)");
+            return Task.FromResult(2);
+        }
+        TokenStore.SaveToFile(token);
+        Console.WriteLine($"token saved to {LauncherPaths.TokenFile}");
+        Console.WriteLine($"(note: {TokenStore.EnvVar} in the environment takes precedence over the file)");
+        return Task.FromResult(0);
+    }
+
+    private static Task<int> ClearTokenAsync()
+    {
+        TokenStore.DeleteFile();
+        Console.WriteLine($"token file removed: {LauncherPaths.TokenFile}");
+        return Task.FromResult(0);
+    }
 
     private static Task<int> DoctorAsync(Args args)
     {

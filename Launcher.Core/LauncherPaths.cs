@@ -22,6 +22,10 @@ public static class LauncherPaths
     /// <summary>Relay files and run artifacts (logs) for in-process hosting.</summary>
     public static string RelayDir => Path.Combine(Root, "relay");
 
+    /// <summary>Optional GitHub token for private-repo release channels (plaintext,
+    /// per-user profile; prefer a fine-grained read-only PAT).</summary>
+    public static string TokenFile => Path.Combine(Root, "github.token");
+
     public static string LogDir => Path.Combine(Root, "logs");
 
     public static string LogFile(string name) => Path.Combine(LogDir, name);
