@@ -72,6 +72,8 @@ public class ReleaseClientTests
         }
     }
 
+
+
     [Fact]
     public void Decode_parses_github_release_payload()
     {
@@ -105,6 +107,56 @@ public class ReleaseClientTests
 // LauncherPaths.Root is static; these classes must not race each other on it.
 [CollectionDefinition("LauncherFs")]
 public sealed class LauncherFsCollection;
+
+[Collection("LauncherFs")]
+public sealed class TokenStoreTests : IDisposable
+{
+    private readonly string _temp =
+        Path.Combine(Path.GetTempPath(), "peakrelay-tokenstore-" + Path.GetRandomFileName());
+
+    public TokenStoreTests()
+    {
+        Directory.CreateDirectory(_temp);
+        LauncherPaths.UseRootForTests(_temp);
+        Environment.SetEnvironmentVariable(ReleaseClient.TokenEnvVar, null);
+    }
+
+    public void Dispose()
+    {
+        TokenStore.DeleteFile();
+        Environment.SetEnvironmentVariable(ReleaseClient.TokenEnvVar, null);
+        Directory.Delete(_temp, recursive: true);
+        LauncherPaths.UseRootForTests(Path.GetTempPath());
+    }
+
+    [Fact]
+    public void Resolve_returns_null_without_any_source()
+        => Assert.Null(TokenStore.Resolve());
+
+    [Fact]
+    public void Env_wins_over_file()
+    {
+        TokenStore.SaveToFile("file-token");
+        Environment.SetEnvironmentVariable(ReleaseClient.TokenEnvVar, "env-token");
+        try
+        {
+            Assert.Equal("env-token", TokenStore.Resolve());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ReleaseClient.TokenEnvVar, null);
+        }
+    }
+
+    [Fact]
+    public void File_fallback_trims_and_delete_clears()
+    {
+        TokenStore.SaveToFile("  file-token  \n");
+        Assert.Equal("file-token", TokenStore.Resolve());
+        TokenStore.DeleteFile();
+        Assert.Null(TokenStore.Resolve());
+    }
+}
 
 [Collection("LauncherFs")]
 public sealed class LauncherStateTests : IDisposable

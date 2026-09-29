@@ -18,12 +18,21 @@ public sealed record ReleaseAsset(string Name, long Size, long Id, string Url);
 public sealed record ReleaseInfo(string Tag, string Name, bool Prerelease, IReadOnlyList<ReleaseAsset> Assets);
 
 /// <summary>
+/// The release channel exists but could not be read — private repo without a (valid)
+/// token, rejected token, or rate limit. Carries an actionable message; distinct from
+/// "no releases published yet".
+/// </summary>
+public sealed class ReleaseChannelException : Exception
+{
+    public ReleaseChannelException(string message) : base(message) { }
+}
+
+/// <summary>
 /// Talks to api.github.com for the PingHugger/PeakRelay releases — the launcher's update
 /// channel. On a public repo everything works anonymously. On a private repo the release
-/// API 404s without credentials; set PEAKRELAY_GH_TOKEN (classic PAT with `repo` read or
-/// fine-grained read-only contents) and the launcher authenticates. The token is read
-/// from the environment at runtime only — it is never embedded in or persisted by the
-/// shipped binary.
+/// API 404s without credentials; the token comes from PEAKRELAY_GH_TOKEN or the per-user
+/// token file (see <see cref="TokenStore"/>). The token is read at runtime only — it is
+/// never embedded in or persisted by the shipped binary itself.
 /// </summary>
 public sealed class ReleaseClient : IDisposable
 {
@@ -39,7 +48,7 @@ public sealed class ReleaseClient : IDisposable
         if (_http.DefaultRequestHeaders.UserAgent.Count == 0)
             _http.DefaultRequestHeaders.UserAgent.ParseAdd("PeakRelay-Launcher");
         _http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
-        var token = TokenFromEnvironment();
+        var token = TokenStore.Resolve();
         if (token != null)
             _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
     }
@@ -56,11 +65,34 @@ public sealed class ReleaseClient : IDisposable
     {
         using var response = await _http.GetAsync("releases/latest", token).ConfigureAwait(false);
         if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
-            return null; // repo with no releases yet (or private without a token)
+        {
+            // 404 is ambiguous: a repo with zero releases, or a private repo we cannot see.
+            // Probe the repo root with the same credentials to tell them apart.
+            if (await RepoUnreachableAsync(token).ConfigureAwait(false))
+                throw new ReleaseChannelException(
+                    "release channel is private or unreachable and no usable GitHub token is " +
+                    "configured — set PEAKRELAY_GH_TOKEN, run 'PeakRelayLauncher.exe set-token', " +
+                    "or see docs/launcher.md");
+            return null; // repo readable, genuinely no releases
+        }
+        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            throw new ReleaseChannelException(
+                "GitHub rejected the configured token (401) — check PEAKRELAY_GH_TOKEN or the token file");
+        if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+            throw new ReleaseChannelException(
+                "GitHub rate limit reached (403) — retry later or configure a token");
         response.EnsureSuccessStatusCode();
         await using var stream = await response.Content.ReadAsStreamAsync(token).ConfigureAwait(false);
         using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: token).ConfigureAwait(false);
         return Decode(doc.RootElement);
+    }
+
+    /// <summary>True when the repo itself 404s with the current credentials (private or
+    /// nonexistent from here). False when it is readable (public, or token accepted).</summary>
+    private async Task<bool> RepoUnreachableAsync(CancellationToken token)
+    {
+        using var probe = await _http.GetAsync("", token).ConfigureAwait(false);
+        return probe.StatusCode == System.Net.HttpStatusCode.NotFound;
     }
 
     /// <summary>All non-draft releases, newest first.</summary>
