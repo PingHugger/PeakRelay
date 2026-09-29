@@ -15,7 +15,18 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"                 # PeakRelay/
-GAME_DIR="${PEAK_GAME_DIR:-$(cd "$ROOT/.." && pwd)}"     # PEAK install root (repo parent)
+
+# The repo may live anywhere; find the PEAK install root (PEAK_GAME_DIR > repo parent
+# when it actually contains PEAK.exe > the default Steam library path).
+find_game() {
+    if [ -n "${PEAK_GAME_DIR:-}" ]; then echo "$PEAK_GAME_DIR"; return; fi
+    for g in "$ROOT/.." "/c/Program Files (x86)/Steam/steamapps/common/PEAK"; do
+        [ -f "$g/PEAK.exe" ] && { echo "$g"; return; }
+    done
+    echo "PEAK install not found — set PEAK_GAME_DIR to the folder containing PEAK.exe" >&2
+    exit 1
+}
+GAME_DIR="$(find_game)"
 BEPINEX_DIR="$GAME_DIR/BepInEx"
 PLUGIN_DIR="$BEPINEX_DIR/plugins/PeakRelay.Dedicated"
 BEPINEX_VERSION="5.4.23.2"
