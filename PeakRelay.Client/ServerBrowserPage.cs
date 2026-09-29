@@ -63,10 +63,23 @@ public sealed class ServerBrowserPage : UIPage, IHaveParentPage
             var go = new GameObject("PeakRelayServerBrowserPage", typeof(RectTransform));
             go.transform.SetParent(handler.transform, false);
             var rect = (RectTransform)go.transform;
-            rect.anchorMin = Vector2.zero;
-            rect.anchorMax = Vector2.one;
-            rect.offsetMin = Vector2.zero;
-            rect.offsetMax = Vector2.zero;
+            // Size depends on the host: anchors only work under a RectTransform. Under a
+            // plain Transform the stretched page would be 0x0 px — the live "blank page"
+            // symptom — so give it an explicit screen-size rect there instead.
+            if (handler.transform is RectTransform)
+            {
+                rect.anchorMin = Vector2.zero;
+                rect.anchorMax = Vector2.one;
+                rect.offsetMin = Vector2.zero;
+                rect.offsetMax = Vector2.zero;
+            }
+            else
+            {
+                rect.anchorMin = new Vector2(0.5f, 0.5f);
+                rect.anchorMax = new Vector2(0.5f, 0.5f);
+                rect.sizeDelta = new Vector2(Screen.width, Screen.height);
+                rect.anchoredPosition = Vector2.zero;
+            }
             go.SetActive(false);
             _instance = go.AddComponent<ServerBrowserPage>();
 
@@ -92,8 +105,15 @@ public sealed class ServerBrowserPage : UIPage, IHaveParentPage
             button.onClick.RemoveAllListeners();
             button.onClick.AddListener(() =>
             {
-                if (_instance != null && GameAPI.TransitionToPage(_instance))
+                if (_instance == null)
+                    return;
+                if (GameAPI.TransitionToPage(_instance))
+                {
+                    // belt and braces: the transition's SetActive should cover this, but a
+                    // page that is not activeInHierarchy draws nothing regardless of cause
+                    _instance.gameObject.SetActive(true);
                     _instance.Refresh();
+                }
             });
             GameAPI.SetButtonLabel(button, "SERVERS");
         }
@@ -105,10 +125,43 @@ public sealed class ServerBrowserPage : UIPage, IHaveParentPage
 
     // ---------------------------------------------------------------- lifecycle
 
+    /// <summary>Back navigation to the main page (the reverse of the join-button rewire).</summary>
+    private void GoBack()
+    {
+        var mainPage = GameAPI.ParentPageOf(this).Item1;
+        if (mainPage == null || !GameAPI.TransitionToPage(mainPage))
+            RelayPlugin.LogWarning("back navigation failed — main page not found");
+    }
+
     public override void OnPageEnter()
     {
         base.OnPageEnter();
+        DumpHierarchy();
         Refresh();
+    }
+
+    /// <summary>
+    /// Ground truth for "blank page" reports: one log line with the page's rect, active
+    /// state and the ancestor chain (type/canvas/active per level) — that pinpoints which
+    /// layer (size, canvas, activation) is eating the render.
+    /// </summary>
+    private void DumpHierarchy()
+    {
+        try
+        {
+            var rect = (RectTransform)transform;
+            var line = new System.Text.StringBuilder($"browser page enter: rect={rect.rect.size} " +
+                                                     "active=" + gameObject.activeInHierarchy);
+            var t = transform.parent;
+            for (var depth = 0; t != null && depth < 8; depth++, t = t.parent)
+                line.Append($" <- {t.name}[{t.GetType().Name}]" +
+                            $"(canvas={t.GetComponent<Canvas>() != null}, on={t.gameObject.activeInHierarchy})");
+            RelayPlugin.LogInfo(line.ToString());
+        }
+        catch (Exception ex)
+        {
+            RelayPlugin.LogWarning($"hierarchy dump failed: {ex.Message}");
+        }
     }
 
     /// <summary>Back navigation: the main page + default active-set transition.</summary>
@@ -232,6 +285,16 @@ public sealed class ServerBrowserPage : UIPage, IHaveParentPage
     {
         var root = (RectTransform)page.transform;
 
+        // Render guarantee: the menu handler is a plain Transform with NO canvas above it
+        // (live-run hierarchy dump: MainMenu[Transform], canvas=False). A Canvas added here
+        // therefore becomes a ROOT canvas — which defaults to World Space at the origin,
+        // i.e. a giant billboard standing in the 3D scene. Force Screen Space Overlay so it
+        // always draws full-screen on top; the GraphicRaycaster lets rows receive clicks.
+        var canvas = page.gameObject.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 500;
+        page.gameObject.AddComponent<GraphicRaycaster>();
+
         var bg = NewRect("Background", root);
         Stretch(bg);
         var bgImage = bg.gameObject.AddComponent<Image>();
@@ -240,6 +303,10 @@ public sealed class ServerBrowserPage : UIPage, IHaveParentPage
         var title = NewRect("Title", root);
         Anchor(title, new Vector2(0.05f, 0.85f), new Vector2(0.7f, 0.93f));
         AddText(title, "PEAKRELAY SERVERS", 28, TextAnchor.MiddleLeft);
+
+        var back = NewRect("Back", root);
+        Anchor(back, new Vector2(0.05f, 0.855f), new Vector2(0.2f, 0.925f));
+        StyleButton(back, "← BACK", page.GoBack);
 
         var refresh = NewRect("Refresh", root);
         Anchor(refresh, new Vector2(0.78f, 0.855f), new Vector2(0.95f, 0.925f));

@@ -27,6 +27,9 @@ public sealed class RelayPlugin : BaseUnityPlugin
     public const string PluginName = "PeakRelay";
     public const string PluginVersion = "0.2.0";
 
+    /// <summary>Build stamp, logged at init: proves which DLL a running game actually loaded.</summary>
+    public const string BuildStamp = "20260929.2";
+
     private static readonly ManualLogSource Log = BepInEx.Logging.Logger.CreateLogSource(PluginName);
     private Harmony? _harmony;
 
@@ -50,7 +53,7 @@ public sealed class RelayPlugin : BaseUnityPlugin
         // server browser: patches (when the game version matches) + page injection
         GameAPI.Initialize(_harmony);
 
-        Log.LogInfo($"PeakRelay {PluginVersion}: relay={RelayConfig.RelayEnabled} " +
+        Log.LogInfo($"PeakRelay {PluginVersion} build={BuildStamp}: relay={RelayConfig.RelayEnabled} " +
                     $"({RelayConfig.Host}:{RelayConfig.Port}) trace={RelayConfig.TraceEnabled}");
     }
 

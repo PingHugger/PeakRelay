@@ -30,7 +30,7 @@ mkdir -p "$LIB"
 
 echo ">> copying game reference DLLs from $PEAK_MANAGED"
 for dll in Photon3Unity3D.dll PhotonRealtime.dll PhotonUnityNetworking.dll Photon.dll Zorro.UI.Runtime.dll \
-           UnityEngine.dll UnityEngine.CoreModule.dll UnityEngine.UI.dll UnityEngine.TextRenderingModule.dll UnityEngine.IMGUIModule.dll \
+           UnityEngine.dll UnityEngine.CoreModule.dll UnityEngine.UI.dll UnityEngine.UIModule.dll UnityEngine.TextRenderingModule.dll UnityEngine.IMGUIModule.dll \
            UnityEngine.MultiplayerModule.dll \
            Assembly-CSharp.dll Zorro.Core.Runtime.dll Utilities.dll Platforms.dll Newtonsoft.Json.dll \
            com.rlabrecque.steamworks.net.dll SteamCommon.dll; do
