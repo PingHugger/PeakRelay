@@ -19,9 +19,17 @@ public class InstallerPayloadTests
     /// </summary>
     private static bool PayloadStaged()
     {
-        var dir = Path.Combine(typeof(InstallerPayloadTests).Assembly.Location,
-            "../../../../Installer.Core/Payload/payload");
-        if (File.Exists(Path.GetFullPath(Path.Combine(dir, "bepinex.zip"))))
+        // Walk up to the repo root (sentinel: PeakRelay.sln) instead of counting ".."
+        // off Assembly.Location — a file path, so ups-counting silently lands wrong.
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "PeakRelay.sln")))
+            dir = dir.Parent;
+        if (dir == null)
+        {
+            Console.WriteLine("[skip] repo root not found from test bin dir");
+            return false;
+        }
+        if (File.Exists(Path.GetFullPath(Path.Combine(dir.FullName, "Installer.Core/Payload/payload", "bepinex.zip"))))
             return true;
         Console.WriteLine("[skip] installer payload not staged — run scripts/prepare-installer-payload.sh");
         return false;
@@ -71,12 +79,17 @@ public class InstallerPayloadTests
     public void No_unnamed_payload_resources()
     {
         var expected = new HashSet<string>(StringComparer.Ordinal);
-        expected.Add("PeakRelay.Installer.Payload.bepinex.zip");
-        expected.Add("PeakRelay.Installer.Payload.doorstop.winhttp.dll");
-        expected.Add("PeakRelay.Installer.Payload.relay.relay.zip");
-        foreach (var (set, dlls) in PeakRelay.Installer.Core.PayloadNames.PluginSets)
-        foreach (var dll in dlls)
-            expected.Add($"PeakRelay.Installer.Payload.{set.Replace('/', '.')}.{dll}");
+        if (PayloadStaged())
+        {
+            expected.Add("PeakRelay.Installer.Payload.bepinex.zip");
+            expected.Add("PeakRelay.Installer.Payload.doorstop.winhttp.dll");
+            expected.Add("PeakRelay.Installer.Payload.relay.relay.zip");
+            foreach (var (set, dlls) in PeakRelay.Installer.Core.PayloadNames.PluginSets)
+            foreach (var dll in dlls)
+                expected.Add($"PeakRelay.Installer.Payload.{set.Replace('/', '.')}.{dll}");
+        }
+        // Payload not staged (e.g. CI standalone build): Installer.Core must embed
+        // NOTHING under the payload namespace — proves the conditional ItemGroup.
 
         var actual = Core.GetManifestResourceNames()
             .Where(n => n.StartsWith("PeakRelay.Installer.Payload.", StringComparison.Ordinal))
