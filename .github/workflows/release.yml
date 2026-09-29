@@ -11,14 +11,23 @@ jobs:
   release:
     # Full distribution build: operator tier (relay zip, plugin DLLs — what enterprises
     # drop into containers) + consumer tier (self-contained installers with the
-    # Doorstop 4.5.0 loader embedded). Also the future launcher's update channel.
-    runs-on: windows-latest
+    # Doorstop 4.5.0 loader embedded). Also the launcher's update channel.
+    #
+    # Must run on a SELF-HOSTED Windows runner: the plugin and installer builds reference
+    # lib/ (proprietary game DLLs), which scripts/fetch-libs.sh provisions FROM A LOCAL
+    # PEAK INSTALL. Cloud runners have no game → the first v0.6.0 attempt failed exactly
+    # there. A runner registered on a machine with PEAK installed satisfies this.
+    runs-on: [self-hosted, windows]
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
+
+      - name: Provision lib/ from the local PEAK install (game DLLs + BepInEx)
+        shell: bash
+        run: bash scripts/fetch-libs.sh
 
       - name: Build plugins (Release — payload staging copies these DLLs)
         run: |
@@ -54,7 +63,7 @@ jobs:
       - name: Collect operator artifacts
         shell: pwsh
         run: |
-          Compress-Archive -Path Installer.Core/Payload/payload/relay -DestinationPath PeakRelay.Server.zip -Force
+          Compress-Archive -Path 'Installer.Core/Payload/payload/relay/*' -DestinationPath PeakRelay.Server.zip -Force
           New-Item -ItemType Directory -Force -Path plugins/PeakRelay.Dedicated, plugins/PeakRelay.Client | Out-Null
           Copy-Item Installer.Core/Payload/payload/plugins/Dedicated/*.dll plugins/PeakRelay.Dedicated/
           Copy-Item Installer.Core/Payload/payload/plugins/Client/*.dll plugins/PeakRelay.Client/
