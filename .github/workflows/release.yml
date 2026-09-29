@@ -20,15 +20,15 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
-      - name: Stage installer payload (BepInEx, Doorstop, plugin DLLs, relay publish)
-        shell: bash
-        run: |
-          DOTNET="$(which dotnet)" bash scripts/prepare-installer-payload.sh
-
-      - name: Build plugins
+      - name: Build plugins (Release — payload staging copies these DLLs)
         run: |
           dotnet build PeakRelay.Dedicated/PeakRelay.Dedicated.csproj -c Release
           dotnet build PeakRelay.Client/PeakRelay.Client.csproj -c Release
+
+      - name: Stage installer payload (BepInEx, Doorstop, plugin DLLs, relay publish)
+        shell: bash
+        run: |
+          DOTNET="$(which dotnet)" BUILD_CONFIG=Release bash scripts/prepare-installer-payload.sh
 
       - name: Build installers (self-contained single-file)
         run: |
