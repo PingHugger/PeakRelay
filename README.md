@@ -45,7 +45,7 @@ scripts/peak-server.sh run
 
 | Tier | For | Get it | Guide |
 |---|---|---|---|
-| Consumer | players & Windows server owners | one-click installers from GitHub Releases | `docs/installers.md` |
+| Consumer | players & Windows server owners | **PeakRelayLauncher.exe** (status doctor, install/update/play/host) | `docs/launcher.md` |
 | Operator | Docker/K8s/service deployments | `PeakRelay.Server.zip` + plugin DLLs from Releases | `docs/distribution.md` |
 
 The dedicated host runs with Steam closed; players install the client plugin and join via

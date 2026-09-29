@@ -172,6 +172,7 @@ missing value, out-of-range `--max` 1–100 / `--port` 1–65535). Without `--di
 
 ```sh
 tools/dotnet/dotnet.exe test tests/PeakRelay.Protocol.Tests     # 19 tests incl. payload contract
+tools/dotnet/dotnet.exe test tests/PeakRelay.Launcher.Tests     # 18 tests: doctor, update decision, zip classification
 dotnet run --project PeakRelay.Tools.TestClient                 # live 8-step relay scenario
 PEAKRELAY_HTTPPORT=5056 dotnet run --project PeakRelay.Tools.TestClient
 ```
