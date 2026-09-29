@@ -24,11 +24,16 @@ namespace PeakRelay.Launcher.Core;
 public static class ModApply
 {
     private static readonly byte[] BepInPluginMarker = System.Text.Encoding.ASCII.GetBytes("BepInPlugin");
-    /// <summary>Applies <paramref name="asset"/> and returns progress/log lines.</summary>
+    /// <summary>
+    /// Applies <paramref name="asset"/> and returns progress/log lines. Config settings are
+    /// computed AFTER the plugin files are extracted, so a first-ever install that ADDS a
+    /// side also gets its config (server.json / client cfg) written in the same pass.
+    /// </summary>
     public static async Task<List<string>> ApplyAsync(string gameDir, ReleaseAsset asset,
         LauncherState state, string tag,
         Func<ReleaseAsset, string, CancellationToken, Task<long>> download,
-        ServerSettings? serverSettings, ClientSettings? clientSettings,
+        string? host, int port,
+        string? room = null, string? password = null, string? hostName = null, int maxPlayers = 20,
         CancellationToken token = default)
     {
         var log = new List<string>();
@@ -69,6 +74,8 @@ public static class ModApply
         foreach (var line in PluginDeployer.EnsureBepInEx(gameDir))
             log.Add(line);
 
+        // Side settings NOW — after extraction, so newly added sides get configured too.
+        var (serverSettings, clientSettings) = ConfigFor(gameDir, host, port, room, password, hostName, maxPlayers);
         if (serverSettings != null)
             log.Add($"server.json written: {PluginDeployer.WriteServerConfig(gameDir, serverSettings)}");
         if (clientSettings != null)
@@ -101,9 +108,9 @@ public static class ModApply
     }
 
     /// <summary>
-    /// Side settings for the config files: configure whatever the install actually has on
-    /// disk (server.json only when the dedicated plugin is there, client cfg likewise).
-    /// Same defaults as the installers' CLI.
+    /// Side settings for the config files: configure whatever the install has on disk
+    /// (server.json only when the dedicated plugin is there, client cfg likewise). Callers
+    /// must invoke this AFTER applying plugin files. Same defaults as the installers' CLI.
     /// </summary>
     public static (ServerSettings? Server, ClientSettings? Client) ConfigFor(
         string gameDir, string? host, int port,
