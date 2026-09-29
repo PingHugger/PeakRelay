@@ -11,15 +11,16 @@
     <RootNamespace>PeakRelay.Installer.Client</RootNamespace>
     <AssemblyName>PeakRelayInstaller-Client</AssemblyName>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Installer.Core\Installer.Core.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <EmbeddedResource Include="..\tools\payload\bepinex.zip" LogicalName="PeakRelay.Installer.Payload.bepinex.zip" />
-    <EmbeddedResource Include="..\tools\payload\plugins\Client.zip" LogicalName="PeakRelay.Installer.Payload.plugins.Client.zip" />
-  </ItemGroup>
+  <!-- single-file packaging: PDBs stay out of the exe, no ilc PDB is produced -->
+  <PropertyGroup>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
 
 </Project>

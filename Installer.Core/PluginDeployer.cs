@@ -52,9 +52,22 @@ public static class PluginDeployer
         }
 
         var count = 0;
+        var gameRoot = Path.GetFullPath(gameDir);
         using (var zip = OpenPayload(PayloadNames.BepInExZip))
+        using (var archive = new ZipArchive(zip, ZipArchiveMode.Read))
         {
-            count = Zip.Extract(zip, string.Empty, gameDir);
+            foreach (var entry in archive.Entries)
+            {
+                var name = entry.FullName.Replace('\\', '/');
+                if (name.EndsWith('/'))
+                    continue;
+                var target = Path.GetFullPath(Path.Combine(gameRoot, name));
+                if (!target.StartsWith(gameRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException($"zip entry escapes target dir: {name}");
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!); // ZipArchive doesn't create parents
+                entry.ExtractToFile(target, overwrite: true);
+                count++;
+            }
         }
         if (!File.Exists(marker))
             throw new InvalidOperationException($"BepInEx extraction finished but {marker} is missing");
@@ -62,37 +75,35 @@ public static class PluginDeployer
         return log;
     }
 
-    /// <summary>Copies embedded plugin DLLs into BepInEx/plugins/&lt;dir&gt;.</summary>
+    /// <summary>
+    /// Copies embedded plugin DLLs into BepInEx/plugins/&lt;dir&gt;. Each DLL is embedded
+    /// loose (payload name "plugins/&lt;set&gt;/&lt;file&gt;.dll"); a missing set or DLL
+    /// throws here rather than at runtime-deep in an install.
+    /// </summary>
     public static List<string> DeployPlugins(string gameDir, string payloadDir, string targetDirName)
     {
         var log = new List<string>();
         var target = Path.Combine(Layout.PluginsDir(gameDir), targetDirName);
         Directory.CreateDirectory(target);
 
-        using (var stream = OpenPayload(payloadDir))
-        using (var archive = new ZipArchive(stream, ZipArchiveMode.Read))
+        foreach (var dll in PayloadNames.PluginSets[payloadDir])
         {
-            // plugin dirs are embedded as a zip so multiple DLLs ship as one resource
-            foreach (var entry in archive.Entries)
-            {
-                if (string.IsNullOrEmpty(entry.Name))
-                    continue;
-                var file = Path.Combine(target, entry.Name);
-                Directory.CreateDirectory(Path.GetDirectoryName(file)!);
-                entry.ExtractToFile(file, overwrite: true);
-                log.Add($"deployed {targetDirName}/{entry.Name}");
-            }
+            using var stream = OpenPayload($"{payloadDir}/{dll}");
+            var file = Path.Combine(target, dll);
+            using var output = File.Create(file);
+            stream.CopyTo(output);
+            log.Add($"deployed {targetDirName}/{dll}");
         }
         return log;
     }
 
     /// <summary>Deploy the dedicated-host plugin set.</summary>
     public static List<string> DeployDedicated(string gameDir) =>
-        DeployPlugins(gameDir, PayloadNames.DedicatedZip, "PeakRelay.Dedicated");
+        DeployPlugins(gameDir, PayloadNames.Dedicated, "PeakRelay.Dedicated");
 
     /// <summary>Deploy the client plugin set.</summary>
     public static List<string> DeployClient(string gameDir) =>
-        DeployPlugins(gameDir, PayloadNames.ClientZip, "PeakRelay.Client");
+        DeployPlugins(gameDir, PayloadNames.Client, "PeakRelay.Client");
 
     /// <summary>Writes server.json next to the dedicated plugin. Returns the file path.</summary>
     public static string WriteServerConfig(string gameDir, ServerSettings settings)

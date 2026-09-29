@@ -14,7 +14,7 @@ public static class RelayStager
     {
         Directory.CreateDirectory(targetDir);
         var count = 0;
-        using (var stream = PluginDeployer.OpenPayload(PayloadNames.RelayDir))
+        using (var stream = PluginDeployer.OpenPayload(PayloadNames.RelayZip))
         using (var archive = new ZipArchive(stream, ZipArchiveMode.Read))
         {
             // relay payload embedded as relay.zip (one resource, many files)

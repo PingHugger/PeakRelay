@@ -18,7 +18,7 @@ tools/dotnet/
 tools/dotnet-tools/
 
 # Installer embed payload (regenerate with scripts/prepare-installer-payload.sh)
-tools/payload/
+Installer.Core/Payload/payload/
 
 # Release output (regenerate with scripts/publish.sh)
 dist/
