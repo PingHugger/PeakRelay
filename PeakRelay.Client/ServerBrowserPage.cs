@@ -300,16 +300,18 @@ public sealed class ServerBrowserPage : UIPage, IHaveParentPage
         var bgImage = bg.gameObject.AddComponent<Image>();
         bgImage.color = new Color(0.06f, 0.08f, 0.11f, 0.97f);
 
+        // header: title on its own top strip, buttons row below it (BACK/REFRESH used to
+        // overlap the title when sharing one band)
         var title = NewRect("Title", root);
-        Anchor(title, new Vector2(0.05f, 0.85f), new Vector2(0.7f, 0.93f));
-        AddText(title, "PEAKRELAY SERVERS", 28, TextAnchor.MiddleLeft);
+        Anchor(title, new Vector2(0.05f, 0.925f), new Vector2(0.7f, 0.99f));
+        AddText(title, "PEAKRELAY SERVERS", 26, TextAnchor.MiddleLeft);
 
         var back = NewRect("Back", root);
-        Anchor(back, new Vector2(0.05f, 0.855f), new Vector2(0.2f, 0.925f));
+        Anchor(back, new Vector2(0.05f, 0.83f), new Vector2(0.2f, 0.905f));
         StyleButton(back, "← BACK", page.GoBack);
 
         var refresh = NewRect("Refresh", root);
-        Anchor(refresh, new Vector2(0.78f, 0.855f), new Vector2(0.95f, 0.925f));
+        Anchor(refresh, new Vector2(0.78f, 0.83f), new Vector2(0.95f, 0.905f));
         StyleButton(refresh, "REFRESH", page.Refresh);
 
         var status = NewRect("Status", root);
