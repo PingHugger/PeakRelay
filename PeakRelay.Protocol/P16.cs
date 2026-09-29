@@ -269,6 +269,52 @@ public static class P16
                 WriteShort(s, (short)v.Length);
                 foreach (var item in v) WriteValue(s, item, setType: true);
                 break;
+            case Array v when v.GetType().GetElementType()!.IsPrimitive || v.GetType().GetElementType() == typeof(string):
+            {
+                // generic typed array: [121][i16 len][elemTag] + untagged elements
+                // (Protocol16.SerializeArray; PEAK gameplay events carry bool[] etc.)
+                if (setType) s.WriteByte(TagArray);
+                WriteShort(s, (short)v.Length);
+                switch (v)
+                {
+                    case bool[] a:
+                        s.WriteByte(TagBool);
+                        foreach (var item in a) s.WriteByte(item ? (byte)1 : (byte)0);
+                        break;
+                    case byte[] a:
+                        s.WriteByte(TagByte);
+                        foreach (var item in a) s.WriteByte(item);
+                        break;
+                    case short[] a:
+                        s.WriteByte(TagShort);
+                        foreach (var item in a) WriteShort(s, item);
+                        break;
+                    case int[] a:
+                        s.WriteByte(TagInt);
+                        foreach (var item in a) WriteInt(s, item);
+                        break;
+                    case long[] a:
+                        s.WriteByte(TagLong);
+                        foreach (var item in a) WriteLong(s, item);
+                        break;
+                    case float[] a:
+                        s.WriteByte(TagFloat);
+                        foreach (var item in a) WriteFloat(s, item);
+                        break;
+                    case double[] a:
+                        s.WriteByte(TagDouble);
+                        foreach (var item in a) WriteDouble(s, item);
+                        break;
+                    case string[] a:
+                        s.WriteByte(TagString);
+                        foreach (var item in a) WriteStringBody(s, item);
+                        break;
+                    default:
+                        throw new InvalidDataException(
+                            $"unsupported array element type for P16: {v.GetType().GetElementType()!.Name}");
+                }
+                break;
+            }
             case LbMessage v when v.IsEvent:
                 if (setType) s.WriteByte(TagEventData);
                 s.WriteByte(v.Code);

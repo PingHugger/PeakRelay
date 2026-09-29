@@ -22,17 +22,21 @@ public static class ServerDirectory
         var servers = new List<ServerInfo>();
         foreach (var room in dispatcher.SnapshotRoomStates())
         {
+            // Photon Voice joins a sibling room named "<room>_voice_" — not a browsable server
+            if (room.Name.EndsWith("_voice_", StringComparison.Ordinal))
+                continue;
+
             var props = room.Properties;
 
             var displayName = room.Name;
-            if (props[ServerPropertyKeys.DisplayName] is string n)
-                displayName = n;
+            if (props.TryGetValue(ServerPropertyKeys.DisplayName, out var n) && n is string name)
+                displayName = name;
 
             var mode = "standard";
-            if (props[ServerPropertyKeys.Mode] is string m)
-                mode = m;
+            if (props.TryGetValue(ServerPropertyKeys.Mode, out var m) && m is string modeValue)
+                mode = modeValue;
 
-            var passwordRequired = props[ServerPropertyKeys.PasswordRequired] is true;
+            var passwordRequired = props.TryGetValue(ServerPropertyKeys.PasswordRequired, out var p) && p is true;
 
             servers.Add(new ServerInfo(room.Name, displayName, mode, passwordRequired, room.ActorCount, room.MaxPlayers));
         }

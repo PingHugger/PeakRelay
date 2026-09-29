@@ -13,4 +13,11 @@ public static class DedicatedState
     /// HandleConnectionState prefix; consumed (and cleared) by RoomOptionsMetadataPatch.
     /// </summary>
     public static Hashtable? PendingRoomMetadata { get; set; }
+
+    /// <summary>
+    /// Set by the CreateRoom prefix when a CreateRoom goes out; lets the plugin's
+    /// "missed OnConnectedToMaster" recovery know a create is already in flight.
+    /// Reset on disconnect by the host cycle.
+    /// </summary>
+    public static bool CreateRoomSent { get; set; }
 }

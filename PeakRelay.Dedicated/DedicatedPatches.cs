@@ -1,6 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
+using ExitGames.Client.Photon;
 using HarmonyLib;
+using Peak.Network;
 using Photon.Pun;
 using PeakRelay.Protocol;
 using Photon.Realtime;
@@ -15,6 +19,64 @@ namespace PeakRelay.Dedicated;
 /// </summary>
 public static class DedicatedPatches
 {
+    /// <summary>
+    /// Forces PUN's serialization to GpBinaryV16 — the format the relay speaks byte-exact
+    /// (the game's LoadBalancingClient ctor sets GpBinaryV18; a live headless run died with
+    /// 'unknown P16 tag 96', a V18-only type, in the key-exchange op). A postfix on the two
+    /// client constructors overrides the value after the client sets it (patching the
+    /// property setter itself NREs inside Harmony — live-run find).
+    /// </summary>
+    [HarmonyPatch]
+    internal static class SerializationProtocolPatch
+    {
+        private static IEnumerable<MethodBase> TargetMethods()
+        {
+            var t = typeof(LoadBalancingClient);
+            yield return AccessTools.Constructor(t, new[] { typeof(ConnectionProtocol) });
+            yield return AccessTools.Constructor(t, new[]
+            {
+                typeof(string), typeof(string), typeof(string), typeof(ConnectionProtocol),
+            });
+        }
+
+        [HarmonyPostfix]
+        public static void ForceV16(LoadBalancingClient __instance)
+        {
+            if (__instance.SerializationProtocol == SerializationProtocol.GpBinaryV18)
+            {
+                __instance.SerializationProtocol = SerializationProtocol.GpBinaryV16;
+                ServerLog.Info("serialization forced to GpBinaryV16 (relay format)");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Registers RelayGameSocket in the Udp slot of every LoadBalancingPeer this process
+    /// constructs — without it the host would dial vanilla UDP at the relay's TCP port.
+    /// The peer has TWO constructors, so the patch must name them explicitly (an unqualified
+    /// MethodType.Constructor is ambiguous and Harmony throws at PatchAll — live-run find).
+    /// </summary>
+    [HarmonyPatch]
+    internal static class PeerSocketPatch
+    {
+        private static IEnumerable<MethodBase> TargetMethods()
+        {
+            yield return AccessTools.Constructor(typeof(LoadBalancingPeer), new[] { typeof(ConnectionProtocol) });
+            yield return AccessTools.Constructor(typeof(LoadBalancingPeer), new[] { typeof(IPhotonPeerListener), typeof(ConnectionProtocol) });
+        }
+
+        [HarmonyPostfix]
+        public static void InstallRelaySocket(LoadBalancingPeer __instance)
+        {
+            var config = __instance.SocketImplementationConfig;
+            if (config.TryGetValue(ConnectionProtocol.Udp, out var current) &&
+                current == typeof(RelayGameSocket))
+            {
+                return;
+            }
+            config[ConnectionProtocol.Udp] = typeof(RelayGameSocket);
+        }
+    }
     /// <summary>
     /// Headless detection mirroring ServerConsole (Konnichiwa): both -batchmode and
     /// -nographics, with the graphics-device counter as tiebreaker. Evaluated once.
@@ -48,26 +110,73 @@ public static class DedicatedPatches
     [HarmonyPatch(typeof(NetworkConnector), "HandleConnectionState")]
     internal static class HostRoomNamePatch
     {
+        /// <summary>
+        /// Runs the vanilla CreateRoom ourselves and SKIPS the original body: the vanilla
+        /// HostState branch overwrites RoomName ("Player1"-tag logic) after our prefix, and
+        /// a live run proved the original then re-created the room with a random name.
+        /// Skipping preserves the vanilla call shape (HostRoomOptions + CreateRoom) with
+        /// config-authoritative values; all non-HostState branches fall through to vanilla.
+        /// </summary>
         [HarmonyPrefix]
-        public static void KeepConfiguredRoomName(ConnectionState state)
+        public static bool KeepConfiguredRoomName(NetworkConnector __instance, ConnectionState state)
         {
             if (state is not HostState hostState)
-                return;
+                return true; // vanilla handles every other state
             var config = DedicatedState.Config;
             if (config == null)
-                return;
-            if (!config.UseVanillaName &&
-                !string.Equals(hostState.RoomName, DedicatedState.ConfiguredRoomName, StringComparison.Ordinal))
-            {
-                ServerLog.Info($"HostState.RoomName '{hostState.RoomName}' → '{DedicatedState.ConfiguredRoomName}' (config wins)");
+                return true;
+
+            if (!config.UseVanillaName)
                 hostState.RoomName = DedicatedState.ConfiguredRoomName;
-            }
             DedicatedState.PendingRoomMetadata = new ExitGames.Client.Photon.Hashtable
             {
                 [ServerPropertyKeys.DisplayName] = config.DisplayName,
                 [ServerPropertyKeys.Mode] = config.Mode,
                 [ServerPropertyKeys.PasswordRequired] = !string.IsNullOrEmpty(config.Password),
             };
+
+            var roomOptions = NetworkingUtilities.HostRoomOptions();
+            ServerLog.Info($"CreateRoom('{hostState.RoomName}') via vanilla options (skip-original prefix)");
+            Photon.Pun.PhotonNetwork.CreateRoom(hostState.RoomName, roomOptions);
+            return false; // skip vanilla HostState branch entirely
+        }
+    }
+
+    /// <summary>
+    /// Guarded prefix on the game's own connect: when PUN already connects or is connected,
+    /// stay vanilla (return false skips nothing — we delegate to the original). When the
+    /// game's connect would dial vanilla Photon Cloud, rewrite the shared settings asset
+    /// toward the relay first. The shared asset (not the method args) is what later paths
+    /// (region swap, re-auth) read, so one write here redirects every path.
+    /// </summary>
+    [HarmonyPatch(typeof(Photon.Pun.PhotonNetwork), nameof(Photon.Pun.PhotonNetwork.ConnectUsingSettings), new[] { typeof(AppSettings), typeof(bool) })]
+    internal static class ConnectRedirectPatch
+    {
+        [HarmonyPrefix]
+        public static void RedirectToRelay(ref AppSettings appSettings)
+        {
+            var config = DedicatedState.Config;
+            if (config == null || appSettings == null)
+                return;
+
+            appSettings.Server = config.RelayHost;
+            appSettings.Port = config.RelayPort;
+            appSettings.Protocol = ConnectionProtocol.Udp;
+            appSettings.UseNameServer = false;
+            appSettings.FixedRegion = null;
+            appSettings.EnableProtocolFallback = false;
+            appSettings.AppIdRealtime = "peakrelay";
+
+            var shared = Photon.Pun.PhotonNetwork.PhotonServerSettings;
+            if (shared != null)
+            {
+                shared.AppSettings.Server = config.RelayHost;
+                shared.AppSettings.Port = config.RelayPort;
+                shared.AppSettings.UseNameServer = false;
+                shared.AppSettings.FixedRegion = null;
+                shared.AppSettings.AppIdRealtime = "peakrelay";
+            }
+            ServerLog.Info($"connect redirected to relay {config.RelayHost}:{config.RelayPort}");
         }
     }
 
@@ -88,6 +197,10 @@ public static class DedicatedPatches
                 return;
             if (!string.Equals(roomName, DedicatedState.ConfiguredRoomName, StringComparison.Ordinal))
                 return; // not our hosted room
+            DedicatedState.CreateRoomSent = true;
+            // CustomRoomProperties is null by default (RoomOptions.cs:19) — the vanilla flow
+            // never sets it; a live run NRE'd here and killed the CreateRoom dispatch.
+            roomOptions.CustomRoomProperties ??= new ExitGames.Client.Photon.Hashtable();
             foreach (var (key, value) in props)
                 roomOptions.CustomRoomProperties[key] = value;
             roomOptions.CustomRoomPropertiesForLobby = new[]

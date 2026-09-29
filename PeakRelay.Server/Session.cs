@@ -203,7 +203,16 @@ public sealed class Session : IDisposable
             while (_lb.PendingOps.Count > 0)
             {
                 var (op, _) = _lb.PendingOps.Dequeue();
-                _dispatcher.Dispatch(_peer, op, _peer.Role);
+                try
+                {
+                    _dispatcher.Dispatch(_peer, op, _peer.Role);
+                }
+                catch (Exception ex)
+                {
+                    // one malformed op (e.g. an exotic payload) must not kill the session;
+                    // the client sees no response for that op and recovers on its own
+                    Console.Error.WriteLine($"relay: op {op.Op} dispatch failed: {ex.Message}");
+                }
                 // responses/events land on _peer.LbOutbound and are flushed by the writer loop
             }
         }

@@ -97,6 +97,9 @@ public sealed class LbDispatcher
             case LbOp.SetProperties:
                 HandleSetProperties(peer, request);
                 break;
+            case 248: // ChangeGroups (Photon Voice interest management): accepted, no state
+                SendResponse(peer, 248, LbError.Ok);
+                break;
             case LbOp.GetProperties:
                 HandleGetProperties(peer, request);
                 break;
@@ -212,6 +215,17 @@ public sealed class LbDispatcher
             {
                 foreach (var (key, value) in props)
                     room.Properties[key] = value;
+            }
+
+            // MaxPlayers rides inside the game-properties hashtable: key 243 (int) and key
+            // 255 (byte) — LoadBalancingPeer.cs:111-112 — not as a top-level op parameter.
+            if (room.ActorCount == 0 && gp is Hashtable gpTable)
+            {
+                if (gpTable.ContainsKey((byte)243) && gpTable[(byte)243] is int max243)
+                    room.MaxPlayers = max243;
+                else if (gpTable.ContainsKey((byte)byte.MaxValue) &&
+                         gpTable[(byte)byte.MaxValue] is byte max255)
+                    room.MaxPlayers = max255;
             }
 
             // admit the actor

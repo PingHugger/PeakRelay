@@ -4,6 +4,7 @@ using BepInEx;
 using BepInEx.Bootstrap;
 using ExitGames.Client.Photon;
 using HarmonyLib;
+using Peak.Network;
 using Photon.Pun;
 using Photon.Realtime;
 using UnityEngine;
@@ -42,7 +43,6 @@ public sealed class DedicatedPlugin : BaseUnityPlugin
     private Harmony? _harmony;
     private DedicatedConfig _config = new();
     private bool _booted;
-    private bool _connectingStarted;
     private int _createRoomAttempts;
     private const int MaxCreateRoomAttempts = 5;
 
@@ -54,7 +54,9 @@ public sealed class DedicatedPlugin : BaseUnityPlugin
         ServerLog.Initialize(pluginDir);
 
         _harmony = new Harmony(PluginGuid);
-        _harmony.PatchAll(typeof(DedicatedPatches));
+        // PatchAll(type) processes ONLY that type's [HarmonyPatch]s — nested classes need
+        // PatchAll(assembly) (the headless live run proved this: no patch fired).
+        _harmony.PatchAll(typeof(DedicatedPlugin).Assembly);
 
         if (!DedicatedPatches.IsHeadless)
         {
@@ -107,6 +109,9 @@ public sealed class DedicatedPlugin : BaseUnityPlugin
 
     internal IEnumerator StartHosting(string roomName)
     {
+        // capacity: the vanilla HostState flow reads NetworkingUtilities.MAX_PLAYERS
+        NetworkingUtilities.SetMaxPlayers(_config.MaxPlayers);
+
         var host = GameHandler.GetService<ConnectionService>().StateMachine.SwitchState<HostState>();
         host.RoomName = roomName;
         DedicatedState.ConfiguredRoomName = roomName;
@@ -122,38 +127,15 @@ public sealed class DedicatedPlugin : BaseUnityPlugin
     /// same fields ourselves and connect with an explicit AppSettings — this is the same
     /// call shape PUN's ConnectUsingSettings(appSettings) overload takes.
     /// </summary>
+    /// <summary>
+    /// Connect through the game's own path (NetworkingUtilities.ConnectToNetwork); the
+    /// ConnectRedirectPatch prefix points it at the relay. Our previous own-call approach
+    /// raced the game's connect flow (live-run bug).
+    /// </summary>
     private void ConnectToRelay()
     {
-        if (_connectingStarted)
-            return;
-        _connectingStarted = true;
-
-        var config = _config;
-        PhotonNetwork.NickName = "peakrelay-dedicated";
-        PhotonNetwork.AuthValues = new AuthenticationValues { AuthType = CustomAuthenticationType.None, UserId = "peakrelay-dedicated" };
-        PhotonNetwork.GameVersion = Application.version;
-        PhotonNetwork.AutomaticallySyncScene = true;
-        PhotonNetwork.SerializationRate = 30;
-        PhotonNetwork.SendRate = 30;
-
-        var settings = new AppSettings
-        {
-            UseNameServer = false,          // connect straight to the relay master
-            Server = config.RelayHost,
-            Port = config.RelayPort,
-            Protocol = ConnectionProtocol.Udp, // RelayGameSocket is registered under Udp
-            AppVersion = Application.version,
-            AuthMode = AuthModeOption.Auth,
-        };
-        if (!PhotonNetwork.ConnectUsingSettings(settings))
-        {
-            ServerLog.Error("PhotonNetwork.ConnectUsingSettings returned false — check relay address");
-            _connectingStarted = false;
-        }
-        else
-        {
-            ServerLog.Info($"connecting to relay {config.RelayHost}:{config.RelayPort}");
-        }
+        NetworkingUtilities.ConnectToNetwork();
+        ServerLog.Info("connect requested via NetworkingUtilities.ConnectToNetwork (relay-redirected)");
     }
 
     private void Update()
@@ -163,7 +145,7 @@ public sealed class DedicatedPlugin : BaseUnityPlugin
 
         // Mirror the room-creation retry the vanilla flow gets from its modal ("Try again"):
         // if CreateRoom failed, NetworkConnector switches back to DefaultConnectionState and
-        // we re-arm HostState + reconnect.
+        // we re-arm HostState.
         try
         {
             if (!_booted && PhotonNetwork.NetworkClientState == ClientState.Joined)
@@ -176,7 +158,7 @@ public sealed class DedicatedPlugin : BaseUnityPlugin
             {
                 ServerLog.Warn("disconnected from relay — restarting host cycle");
                 _booted = false;
-                _connectingStarted = false;
+                DedicatedState.CreateRoomSent = false;
                 _createRoomAttempts++;
                 if (_createRoomAttempts > MaxCreateRoomAttempts)
                 {
@@ -185,10 +167,54 @@ public sealed class DedicatedPlugin : BaseUnityPlugin
                 }
                 StartCoroutine(RestartHostCycle());
             }
+            else if (!_booted && !DedicatedState.CreateRoomSent &&
+                     PhotonNetwork.NetworkClientState == ClientState.ConnectedToMasterServer &&
+                     CurrentStateIsHostState())
+            {
+                // Recovery for the connect-finishes-before-HostState race (live-run find):
+                // OnConnectedToMaster already fired with the wrong state, so nothing will
+                // create the room. Drive the game's own handler now.
+                ServerLog.Info("connected before HostState was armed — invoking HandleConnectionState");
+                DedicatedState.CreateRoomSent = true;
+                HandleConnectionStateNow();
+            }
         }
         catch (Exception ex)
         {
             ServerLog.Error($"update tick failed: {ex.Message}");
+        }
+    }
+
+    private static bool CurrentStateIsHostState()
+    {
+        try
+        {
+            return GameHandler.GetService<ConnectionService>().StateMachine.CurrentState is HostState;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Runs the game's own state handler (the OnConnectedToMaster body's core).</summary>
+    private static void HandleConnectionStateNow()
+    {
+        try
+        {
+            var connector = UnityEngine.Object.FindFirstObjectByType<NetworkConnector>();
+            if (connector == null)
+            {
+                ServerLog.Error("recovery: NetworkConnector not found in scene");
+                return;
+            }
+            var state = GameHandler.GetService<ConnectionService>().StateMachine.CurrentState;
+            var method = AccessTools.Method(typeof(NetworkConnector), "HandleConnectionState");
+            method?.Invoke(connector, new[] { (ConnectionState)state });
+        }
+        catch (Exception ex)
+        {
+            ServerLog.Error($"recovery HandleConnectionState failed: {ex.Message}");
         }
     }
 
@@ -201,7 +227,6 @@ public sealed class DedicatedPlugin : BaseUnityPlugin
             var host = GameHandler.GetService<ConnectionService>().StateMachine.SwitchState<HostState>();
             host.RoomName = DedicatedState.ConfiguredRoomName;
         }
-        _connectingStarted = false;
         ConnectToRelay();
     }
 }
