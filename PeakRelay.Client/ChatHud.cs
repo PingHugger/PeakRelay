@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using ExitGames.Client.Photon;
 using PeakRelay.Protocol;
 using Photon.Pun;
@@ -20,14 +19,21 @@ namespace PeakRelay.Client;
 /// HUD resolves to a player name. Vanilla clients ignore both codes. Events the game does
 /// use flow through OnEvent untouched (the callback is passive).
 ///
-/// Rendering is IMGUI (module already referenced by the shim): no scene objects, no
-/// prefabs, no game-UI integration — it cannot break the game's own interface.
+/// Implementation constraints (release-runner compile finds):
+/// - NO UnityEngine.Input: the InputLegacyModule is not in every provisioned lib/ set, and
+///   OnGUI key events cover the same need portably;
+/// - OnEnable/OnDisable are NOT overridden (newer MonoBehaviourPunCallbacks defines them
+///   non-virtual) — callback registration happens lazily in OnEvent/Update instead;
+/// - all fields are initialized inline to satisfy nullable analysis under any SDK.
+///
+/// Rendering is IMGUI only: no scene objects, no prefabs, no game-UI integration — it
+/// cannot break the game's own interface.
 /// </summary>
 public sealed class ChatHud : MonoBehaviourPunCallbacks
 {
     private sealed class Entry
     {
-        public string Text;
+        public string Text = "";
         public float ShownAt;
         public float Lifetime;
         public bool IsServer;
@@ -38,6 +44,7 @@ public sealed class ChatHud : MonoBehaviourPunCallbacks
     private GUIStyle? _serverStyle;
     private GUIStyle? _boxStyle;
     private GUIStyle? _inputStyle;
+    private GUIStyle? _shadowStyle;
     private bool _subscribed;
 
     private string _input = "";
@@ -53,22 +60,42 @@ public sealed class ChatHud : MonoBehaviourPunCallbacks
     /// <summary>Maximum messages on screen at once (oldest drop off first).</summary>
     private const int MaxEntries = 6;
 
-    private void OnEnable()
+    /// <summary>
+    /// Lazily registers with the PUN callback list (first Update/OnGUI after Awake). Done
+    /// here instead of OnEnable because MonoBehaviourPunCallbacks declares OnEnable on some
+    /// PUN builds, which would make a plain declaration a compile error.
+    /// </summary>
+    private void EnsureSubscribed()
     {
-        if (!_subscribed)
+        if (_subscribed)
+            return;
+        try
         {
             PhotonNetwork.AddCallbackTarget(this);
             _subscribed = true;
         }
+        catch (Exception)
+        {
+            // PUN not ready yet — retried next frame; never throw from the HUD
+        }
     }
 
-    private void OnDisable()
+    private void Update()
     {
-        if (_subscribed)
-        {
-            PhotonNetwork.RemoveCallbackTarget(this);
-            _subscribed = false;
-        }
+        EnsureSubscribed();
+    }
+
+    private void OpenInput()
+    {
+        _inputOpen = true;
+        _input = "";
+        _focusNextFrame = true;
+    }
+
+    private void CloseInput()
+    {
+        _inputOpen = false;
+        _input = "";
     }
 
     /// <summary>
@@ -77,6 +104,7 @@ public sealed class ChatHud : MonoBehaviourPunCallbacks
     /// </summary>
     public void OnEvent(EventData eventData)
     {
+        EnsureSubscribed();
         byte? kind = eventData?.Code switch
         {
             ChatEvent.ServerEventCode => ChatEvent.ServerEventCode,
@@ -124,35 +152,6 @@ public sealed class ChatHud : MonoBehaviourPunCallbacks
             _entries.RemoveAt(0);
     }
 
-    private void Update()
-    {
-        // Only while connected to a room; never in menus.
-        if (PhotonNetwork.InRoom)
-        {
-            if (!_inputOpen && (Input.GetKeyDown(KeyCode.Y) || Input.GetKeyDown(KeyCode.Return)))
-            {
-                OpenInput();
-            }
-        }
-        else if (_inputOpen)
-        {
-            CloseInput();
-        }
-    }
-
-    private void OpenInput()
-    {
-        _inputOpen = true;
-        _input = "";
-        _focusNextFrame = true;
-    }
-
-    private void CloseInput()
-    {
-        _inputOpen = false;
-        _input = "";
-    }
-
     /// <summary>Sends the typed message to everyone in the room.</summary>
     private void Send()
     {
@@ -166,13 +165,7 @@ public sealed class ChatHud : MonoBehaviourPunCallbacks
         var peer = PhotonNetwork.NetworkingClient?.LoadBalancingPeer;
         if (peer == null || !PhotonNetwork.InRoom)
         {
-            Announce(new Entry
-            {
-                Text = "PeakRelay: not connected — message not sent",
-                ShownAt = Time.unscaledTime,
-                Lifetime = HoldSeconds + FadeSeconds,
-                IsServer = false,
-            });
+            AnnounceSystem("PeakRelay: not connected — message not sent");
             return;
         }
 
@@ -186,21 +179,34 @@ public sealed class ChatHud : MonoBehaviourPunCallbacks
         var ok = peer.OpRaiseEvent(ChatEvent.PlayerEventCode,
             ChatEvent.CreatePayload(from, text), options, SendOptions.SendReliable);
         if (!ok)
+            AnnounceSystem("PeakRelay: the network rejected your message");
+        // success feedback arrives as the event echoes back via the relay (ReceiverGroup.All
+        // includes the sender), so no local optimistic echo is needed
+    }
+
+    private void AnnounceSystem(string text)
+    {
+        Announce(new Entry
         {
-            Announce(new Entry
-            {
-                Text = "PeakRelay: the network rejected your message",
-                ShownAt = Time.unscaledTime,
-                Lifetime = HoldSeconds + FadeSeconds,
-                IsServer = false,
-            });
-        }
-        // success feedback arrives as the event echoes back via the relay (Others + sender
-        // receive it), so no local optimistic echo is needed
+            Text = text,
+            ShownAt = Time.unscaledTime,
+            Lifetime = HoldSeconds + FadeSeconds,
+            IsServer = false,
+        });
     }
 
     private void OnGUI()
     {
+        EnsureSubscribed();
+
+        // open hotkey via GUI events (no UnityEngine.Input: the InputLegacyModule is not
+        // provisioned in every lib/ set — release-runner compile find)
+        if (!_inputOpen && PhotonNetwork.InRoom && Event.current.type == EventType.KeyDown &&
+            Event.current.keyCode is KeyCode.Y or KeyCode.Return or KeyCode.KeypadEnter)
+        {
+            OpenInput();
+        }
+
         DrawEntries();
         if (_inputOpen)
             DrawInput();
@@ -222,6 +228,10 @@ public sealed class ChatHud : MonoBehaviourPunCallbacks
         _serverStyle ??= new GUIStyle(_style)
         {
             normal = { textColor = new Color(1f, 0.85f, 0.4f) },
+        };
+        _shadowStyle ??= new GUIStyle(_style)
+        {
+            normal = { textColor = new Color(0f, 0f, 0f, 0.85f) },
         };
 
         var now = Time.unscaledTime;
@@ -245,8 +255,7 @@ public sealed class ChatHud : MonoBehaviourPunCallbacks
             GUI.color = new Color(previous.r, previous.g, previous.b, Mathf.Clamp01(alpha));
 
             var style = entry.IsServer ? _serverStyle : _style;
-            var shadow = new Rect(11f, y + 1f, width, height);
-            GUI.Label(shadow, content, ShadowStyle(style));
+            GUI.Label(new Rect(11f, y + 1f, width, height), content, _shadowStyle);
             GUI.Label(new Rect(10f, y, width, height), content, style);
 
             GUI.color = previous;
@@ -275,11 +284,9 @@ public sealed class ChatHud : MonoBehaviourPunCallbacks
         GUI.SetNextControlName("peakrelay-chat-input");
         _input = GUI.TextField(new Rect(box.x + 8f, box.y + 7f, box.width - 16f, 22f), _input, ChatEvent.MaxLength, _inputStyle);
 
-        var enter = _inputOpen && (Event.current.keyCode == KeyCode.Return ||
-                                   Event.current.keyCode == KeyCode.KeypadEnter) &&
+        var enter = Event.current.keyCode is KeyCode.Return or KeyCode.KeypadEnter &&
                     Event.current.type == EventType.KeyUp;
-        var escape = _inputOpen && Event.current.keyCode == KeyCode.Escape &&
-                     Event.current.type == EventType.KeyUp;
+        var escape = Event.current.keyCode == KeyCode.Escape && Event.current.type == EventType.KeyUp;
         if (enter)
         {
             Event.current.Use();
@@ -290,19 +297,5 @@ public sealed class ChatHud : MonoBehaviourPunCallbacks
             Event.current.Use();
             CloseInput();
         }
-    }
-
-    private static GUIStyle _shadowStyle;
-
-    private static GUIStyle ShadowStyle(GUIStyle baseStyle)
-    {
-        if (_shadowStyle == null)
-        {
-            _shadowStyle = new GUIStyle(baseStyle)
-            {
-                normal = { textColor = new Color(0f, 0f, 0f, 0.85f) },
-            };
-        }
-        return _shadowStyle;
     }
 }
