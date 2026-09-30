@@ -210,12 +210,17 @@ public sealed class ChatHud : MonoBehaviourPunCallbacks, IOnEventCallback
         DrawEntries();
 
         // open hotkey: Y with no modifiers, only in a room, only when the game is not
-        // already blocking input (pause menu, map, etc. keep their priority)
-        if (!_inputOpen && PhotonNetwork.InRoom && Event.current.type == EventType.KeyDown &&
+        // already blocking input (pause menu, map, etc. keep their priority).
+        // KeyUp, not KeyDown (bug report: the 'y' landed in the freshly opened chat box):
+        // opening on KeyDown lets the SAME keystroke be processed as text input by the
+        // field focused one frame later — the classic IMGUI race. Enter-to-send below
+        // already works this way.
+        if (!_inputOpen && PhotonNetwork.InRoom && Event.current.type == EventType.KeyUp &&
             Event.current.keyCode == KeyCode.Y &&
             !Event.current.shift && !Event.current.control && !Event.current.alt && !Event.current.command &&
             !(GUIManager.instance != null && GUIManager.instance.windowBlockingInput))
         {
+            Event.current.Use();
             OpenInput();
         }
 

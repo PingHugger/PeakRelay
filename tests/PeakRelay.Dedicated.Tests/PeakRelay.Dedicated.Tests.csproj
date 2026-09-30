@@ -25,6 +25,16 @@
       <HintPath>..\..\lib\Photon3Unity3D.dll</HintPath>
       <Private>true</Private>
     </Reference>
+    <!-- PunEventBridge derives MonoBehaviour — the type hierarchy needs CoreModule to load -->
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>..\..\lib\UnityEngine.CoreModule.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <!-- DedicatedPlugin (MainThreadJobs) derives BaseUnityPlugin — needs BepInEx to load -->
+    <Reference Include="BepInEx">
+      <HintPath>..\..\lib\BepInEx.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
     <Reference Include="PhotonRealtime">
       <HintPath>..\..\lib\PhotonRealtime.dll</HintPath>
       <Private>true</Private>

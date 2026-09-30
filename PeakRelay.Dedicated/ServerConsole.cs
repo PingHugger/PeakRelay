@@ -117,6 +117,59 @@ internal static class ServerConsole
     }
 
     /// <summary>
+    /// The 'stop' command's shutdown path (runs on the console stdin thread — bug report:
+    /// the old stop never exited). Two hard-won lessons are baked in:
+    ///
+    /// 1. Application.Quit/Environment.Exit from this background thread hang the process in
+    ///    Unity players (Mono shutdown waits on the main thread) — so quit is marshaled to
+    ///    the Unity main loop via MainThreadJobs (drained by DedicatedPlugin.Update), and
+    ///    only then Environment.Exit from the main thread.
+    /// 2. Nothing is trusted to finish: a watchdog hard-kills the process if the graceful
+    ///    path stalls (stuck Unity teardown, blocked finalizers…).
+    /// </summary>
+    internal static void RequestShutdown()
+    {
+        Shutdown(); // idempotent: ends the stdin loop, flushes the log
+        ArmShutdownWatchdog();
+        DedicatedPlugin.MainThreadJobs.Enqueue(RequestedQuitOnMainThread);
+    }
+
+    /// <summary>
+    /// Runs on the Unity main thread (via MainThreadJobs): flushes the log file, then asks
+    /// Unity to quit. Live-run lesson: Environment.Exit from any thread HANGS in this Unity
+    /// player (observed even on the main thread), so the watchdog — not this method — is
+    /// what actually guarantees the exit.
+    /// </summary>
+    private static void RequestedQuitOnMainThread()
+    {
+        try { WriteLogLine("PEAK", "cyan", "Server shut down by operator (stop). Goodbye!", verboseOnly: false); }
+        catch { /* logging never throws */ }
+        try { UnityEngine.Application.Quit(); } catch { /* headless quit niceties */ }
+    }
+
+    /// <summary>
+    /// Background safety net: if the graceful quit has not ended the process in time, kill
+    /// it at OS level. Process.Kill is the only shutdown primitive that cannot hang —
+    /// Environment.Exit was observed to deadlock in the Unity player even on the main
+    /// thread, so it is deliberately NOT attempted here.
+    /// </summary>
+    private static void ArmShutdownWatchdog()
+    {
+        // Never in tests (TestSink set): a stray kill would take down the test runner.
+        if (TestSink != null)
+            return;
+        var watchdog = new Thread(() =>
+        {
+            Thread.Sleep(5000);
+            try { Console.Out.WriteLine("(the server did not close in time — forcing it down)"); Console.Out.Flush(); } catch { /* console gone */ }
+            try { ServerLog.MirrorToDedicatedLog($"{DateTime.Now.ToString(TimeFormat, CultureInfo.InvariantCulture)} [PEAK] graceful shutdown stalled — forcing exit"); } catch { /* never throws */ }
+            try { System.Diagnostics.Process.GetCurrentProcess().Kill(); } catch { /* nothing left to try */ }
+        })
+        { IsBackground = true, Name = "PeakRelay Shutdown Watchdog" };
+        watchdog.Start();
+    }
+
+    /// <summary>
     /// Windows: ALWAYS create our own console window. Attaching to the parent is not enough
     /// — the server is usually started by the launcher or a service whose console is hidden
     /// (live-run find: the operator then sees nothing at all). A dedicated window is the
@@ -191,6 +244,9 @@ internal static class ServerConsole
 
     /// <summary>A problem that needs attention (red).</summary>
     internal static void Error(string text) => WriteLogLine("PEAK", "red", text, verboseOnly: false);
+
+    /// <summary>Player chat as heard in the room, e.g. "Bob: hello everyone" (white).</summary>
+    internal static void Chat(string text) => WriteLogLine("CHAT", "white", text, verboseOnly: false);
 
     /// <summary>
     /// A technical detail hidden unless the operator asked for verbose output.
