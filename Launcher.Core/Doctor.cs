@@ -118,6 +118,29 @@ public static class Doctor
                 "no record for this install (installed outside the launcher?)."));
         }
 
+        // Release automation: the tag-triggered release workflow needs the self-hosted
+        // runner alive. A runner that only runs in a terminal dies with the next reboot and
+        // silently strands releases in 'queued'. Windows only — the workflow's runner label
+        // is Windows/X64, so on other platforms this check is irrelevant anyway.
+        if (OperatingSystem.IsWindows())
+        {
+            var runnerDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "actions-runner");
+            if (RunnerService.LooksLikeRunner(runnerDir))
+            {
+                var install = RunnerService.Inspect(runnerDir);
+                checks.Add(install.ServiceRunning
+                    ? new Check(CheckStatus.Pass, "Release runner service",
+                        $"{install.ServiceName} is running — releases build even after a reboot.")
+                    : new Check(CheckStatus.Warn, "Release runner service",
+                        install.ServiceExists
+                            ? $"{install.ServiceName} exists but is not running — tag releases would sit in 'queued'."
+                            : "runner is configured but not installed as a Windows service — it dies with the next reboot.",
+                        install.ServiceExists
+                            ? "Start it: 'PeakRelayLauncher.exe runner-service-install' (or services.msc)."
+                            : "Install it: 'PeakRelayLauncher.exe runner-service-install' (asks for admin approval)."));
+            }
+        }
+
         // Update channel reachability: token present or anonymous.
         var hasToken = TokenStore.Resolve() != null;
         checks.Add(new Check(CheckStatus.Pass, "Release channel",
