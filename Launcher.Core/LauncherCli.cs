@@ -28,8 +28,6 @@ public sealed class LauncherUsageException : Exception
 ///   server-sync           create/refresh the dedicated-server game copy
 ///   server-start          start the dedicated server headless
 ///   server-stop           stop the dedicated server
-///   runner-service-install    install+start the GitHub Actions runner as a Windows service (admin)
-///   runner-service-remove     stop+remove the runner service (registration stays)
 /// Exit codes mirror the installers: 0 ok, 1 failure, 2 usage.
 /// </summary>
 public static class LauncherCli
@@ -56,7 +54,7 @@ public static class LauncherCli
         catch (LauncherUsageException ex)
         {
             Console.Error.WriteLine($"error: {ex.Message}");
-            Console.Error.WriteLine("usage: PeakRelay.Launcher [--dir <path>] [--yes] [--server-dir <path>] [doctor|install|update|play|host|selfupdate|set-token|clear-token|server-sync|server-start|server-stop|runner-service-install|runner-service-remove]");
+            Console.Error.WriteLine("usage: PeakRelay.Launcher [--dir <path>] [--yes] [--server-dir <path>] [doctor|install|update|play|host|selfupdate|set-token|clear-token|server-sync|server-start|server-stop]");
             return 2;
         }
 
@@ -75,8 +73,6 @@ public static class LauncherCli
                 "server-sync" => await ServerSyncAsync(args).ConfigureAwait(false),
                 "server-start" => await ServerStartAsync(args).ConfigureAwait(false),
                 "server-stop" => await ServerStopAsync().ConfigureAwait(false),
-                "runner-service-install" => await RunnerServiceInstallAsync().ConfigureAwait(false),
-                "runner-service-remove" => await RunnerServiceRemoveAsync().ConfigureAwait(false),
                 _ => throw new LauncherUsageException($"unknown command '{args.Command}'"),
             };
         }
@@ -183,40 +179,6 @@ public static class LauncherCli
         ServerCopy.Stop();
         Console.WriteLine("dedicated server stopped");
         return Task.FromResult(0);
-    }
-
-    /// <summary>Finds the configured runner directory next to the launcher (best effort).</summary>
-    internal static string? FindRunnerDirectory()
-    {
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var candidate = Path.Combine(home, "actions-runner");
-        return RunnerService.LooksLikeRunner(candidate) ? candidate : null;
-    }
-
-    private static Task<int> RunnerServiceInstallAsync()
-    {
-        var dir = FindRunnerDirectory();
-        if (dir == null)
-        {
-            Console.Error.WriteLine("error: no configured GitHub Actions runner found at %USERPROFILE%\\actions-runner");
-            return Task.FromResult(1);
-        }
-        var result = RunnerService.Install(dir);
-        Console.WriteLine(result.Message);
-        return Task.FromResult(result.Ok ? 0 : 1);
-    }
-
-    private static Task<int> RunnerServiceRemoveAsync()
-    {
-        var dir = FindRunnerDirectory();
-        if (dir == null)
-        {
-            Console.Error.WriteLine("error: no configured GitHub Actions runner found at %USERPROFILE%\\actions-runner");
-            return Task.FromResult(1);
-        }
-        var result = RunnerService.Uninstall(dir);
-        Console.WriteLine(result.Message);
-        return Task.FromResult(result.Ok ? 0 : 1);
     }
 
     /// <summary>Stores a GitHub token for private-repo channels. Env var still wins.</summary>
