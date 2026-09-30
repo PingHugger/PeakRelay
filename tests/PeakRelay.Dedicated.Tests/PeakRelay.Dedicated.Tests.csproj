@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\PeakRelay.Dedicated\PeakRelay.Dedicated.csproj" />
+  </ItemGroup>
+
+  <!--
+    The plugin references the game assemblies with Private=false (they must not be shipped
+    inside the BepInEx plugin folder), so tests that exercise console commands touching
+    Photon types need them copied to the test output explicitly.
+  -->
+  <ItemGroup>
+    <Reference Include="Photon3Unity3D">
+      <HintPath>..\..\lib\Photon3Unity3D.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="PhotonRealtime">
+      <HintPath>..\..\lib\PhotonRealtime.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="PhotonUnityNetworking">
+      <HintPath>..\..\lib\PhotonUnityNetworking.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>
