@@ -46,6 +46,7 @@ public sealed class RelayPlugin : BaseUnityPlugin
             _harmony.PatchAll(typeof(PunSocketPatches));
             _harmony.PatchAll(typeof(SerializationProtocolPatch));
             _harmony.PatchAll(typeof(ConnectPatches));
+            _harmony.PatchAll(typeof(ChatInputBlockPatch));
         }
         catch (Exception ex)
         {
