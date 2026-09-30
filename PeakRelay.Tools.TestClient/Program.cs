@@ -2,8 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using ExitGames.Client.Photon;
-using Photon.Realtime;
 using PeakRelay.Protocol;
+using Photon.Realtime;
 using Hashtable = ExitGames.Client.Photon.Hashtable;
 
 namespace PeakRelay.Tools.TestClient;
@@ -198,6 +198,48 @@ public static class Program
             Console.WriteLine("step 8 OK: /api/servers lists the server with rich metadata");
         else
             Console.WriteLine("step 8 SKIPPED: /api/servers not reachable (HTTP sidecar off?)");
+
+        // ---- player chat round-trip (event 198): guest raises, host + guest must both see
+        // it with the relay-stamped sender actor (254) and the ChatEvent payload intact.
+        // This is the exact wire shape the client shim's ChatHud and the console's 'say'
+        // use (server announcements ride the same routing on event 199).
+        int beforeGuest198 = CountEvents(guest, ChatEvent.PlayerEventCode);
+        int beforeHost198 = CountEvents(host, ChatEvent.PlayerEventCode);
+        if (!guest.LoadBalancingPeer.OpRaiseEvent(
+                ChatEvent.PlayerEventCode,
+                ChatEvent.CreatePayload("GuestPlayer", "gg duck lovers"),
+                new Photon.Realtime.RaiseEventOptions { Receivers = Photon.Realtime.ReceiverGroup.All },
+                SendOptions.SendReliable))
+        {
+            Console.Error.WriteLine("failed to raise chat event");
+            return 1;
+        }
+        if (!WaitUntil(() => CountEvents(host, ChatEvent.PlayerEventCode) > beforeHost198, TimeoutMs))
+        {
+            Console.Error.WriteLine("host never received the player chat event");
+            return 1;
+        }
+        var hostChat = FindEvent(host, ChatEvent.PlayerEventCode, beforeHost198);
+        var decodedForHost = hostChat != null && hostChat.Parameters.TryGetValue(245, out var hostPayload)
+            ? ChatEvent.TryDecode(ChatEvent.PlayerEventCode, hostPayload)
+            : null;
+        if (decodedForHost == null || decodedForHost.Text != "gg duck lovers")
+        {
+            Console.Error.WriteLine("host received malformed chat payload");
+            return 1;
+        }
+        if (!hostChat!.Parameters.TryGetValue(254, out var senderObj) ||
+            senderObj is not int senderActor || senderActor != guest.LocalPlayer.ActorNumber)
+        {
+            Console.Error.WriteLine($"chat sender actor missing/mismatch: {hostChat.Parameters.TryGetValue(254, out var s)}");
+            return 1;
+        }
+        if (!WaitUntil(() => CountEvents(guest, ChatEvent.PlayerEventCode) > beforeGuest198, TimeoutMs))
+        {
+            Console.Error.WriteLine("sender never received the echo of their own chat (ReceiverGroup.All)");
+            return 1;
+        }
+        Console.WriteLine($"step 9 OK: player chat routed both ways (sender actor {senderActor}, payload intact)");
 
         Console.WriteLine("RELAY SCENARIO OK");
         return 0;

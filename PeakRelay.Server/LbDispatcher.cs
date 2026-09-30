@@ -426,22 +426,30 @@ public sealed class LbDispatcher
             }
         }
 
+        // ReceiverGroup values (Photon.Realtime.ReceiverGroup): Others = 0, All = 1,
+        // MasterClient = 2. All must INCLUDE the sender (Photon Cloud semantics — the client
+        // shim's chat relies on the echo as send confirmation); the old mapping had All and
+        // MasterClient swapped and never delivered to the sender (chat test found).
         if (request.Parameters.TryGetValue(LbParam.ReceiverGroup, out var rg) && rg is byte receivers)
         {
             switch (receivers)
             {
-                case 1: // MasterClient only
+                case 0: // Others: everyone except the raising actor
+                    room.BroadcastEvent(BuildEvent(), peer);
+                    return;
+                case 1: // All: everyone, sender included
+                    foreach (var actor in room.Actors.Values)
+                        actor.EnqueueLbEvent(BuildEvent());
+                    return;
+                case 2: // MasterClient only
                     var masterNr = room.MasterClientNumber;
                     if (room.Actors.TryGetValue(masterNr, out var master))
                         master.EnqueueLbEvent(BuildEvent());
                     return;
-                case 2: // Others
-                    room.BroadcastEvent(BuildEvent(), peer);
-                    return;
             }
         }
 
-        room.BroadcastEvent(BuildEvent(), peer); // Everyone except source
+        room.BroadcastEvent(BuildEvent(), peer); // default: everyone except source
     }
 
     private void HandleSetProperties(LbPeer peer, LbRequest request)
