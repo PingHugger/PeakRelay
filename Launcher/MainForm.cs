@@ -41,15 +41,6 @@ public sealed class MainForm : Form
         Text = "no server copy", AutoSize = true,
         ForeColor = Color.DimGray, TextAlign = ContentAlignment.MiddleCenter,
     };
-    private readonly Button _runner = new()
-    {
-        Dock = DockStyle.Fill, Height = 44, Text = "Install release runner service",
-    };
-    private readonly Label _runnerState = new()
-    {
-        Text = "release runner: checking…", AutoSize = true,
-        ForeColor = Color.DimGray, TextAlign = ContentAlignment.MiddleCenter,
-    };
     private bool _busy;
 
     public MainForm()
@@ -93,19 +84,12 @@ public sealed class MainForm : Form
         serverRow.Controls.Add(_server, 0, 0);
         serverRow.Controls.Add(_serverState, 1, 0);
 
-        var runnerRow = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 2, Height = 50 };
-        runnerRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        runnerRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        runnerRow.Controls.Add(_runner, 0, 0);
-        runnerRow.Controls.Add(_runnerState, 1, 0);
-
-        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 9, Padding = new Padding(10) };
+        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 8, Padding = new Padding(10) };
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));   // dir row
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 40));    // status list
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));   // install / play
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));   // host relay row
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));   // dedicated server row
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));   // release runner row
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 60));    // log
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));   // hint
         root.Controls.Add(dirRow, 0, 0);
@@ -113,13 +97,12 @@ public sealed class MainForm : Form
         root.Controls.Add(buttonRow, 0, 2);
         root.Controls.Add(hostRow, 0, 3);
         root.Controls.Add(serverRow, 0, 4);
-        root.Controls.Add(runnerRow, 0, 5);
-        root.Controls.Add(_log, 0, 6);
+        root.Controls.Add(_log, 0, 5);
         root.Controls.Add(new Label
         {
-            Text = "install/repair from GitHub Releases · doctor re-checks every 20 s · CLI: doctor|install|update|play|host|server-sync|server-start|server-stop|runner-service-install|runner-service-remove",
+            Text = "install/repair from GitHub Releases · doctor re-checks every 20 s · CLI: doctor|install|update|play|host|server-sync|server-start|server-stop",
             AutoSize = true, ForeColor = Color.DimGray,
-        }, 0, 7);
+        }, 0, 6);
 
         Controls.Add(root);
 
@@ -127,7 +110,6 @@ public sealed class MainForm : Form
         _play.Click += async (_, _) => await RunAsync(PlayAsync).ConfigureAwait(true);
         _host.Click += async (_, _) => await RunAsync(HostAsync).ConfigureAwait(true);
         _server.Click += async (_, _) => await RunAsync(ServerButtonAsync).ConfigureAwait(true);
-        _runner.Click += async (_, _) => await RunAsync(RunnerButtonAsync).ConfigureAwait(true);
         _gameDir.TextChanged += (_, _) => _ = RunAsync(RefreshAsync);
         _autoRefresh.Tick += (_, _) => _ = RunAsync(RefreshAsync);
 
@@ -324,75 +306,6 @@ public sealed class MainForm : Form
         var process = await Task.Run(() => ServerCopy.Start(serverDir)).ConfigureAwait(true);
         Log($"dedicated server started (pid {process.Id}) from {serverDir}.");
         await RefreshServerRow().ConfigureAwait(true);
-        await RefreshRunnerRow().ConfigureAwait(true);
-    }
-
-    /// <summary>
-    /// The release-runner button: installs the auto-start Windows service when missing,
-    /// removes it when present (the UAC prompt is the admin approval). Hidden on
-    /// non-Windows and when no configured runner lives at %USERPROFILE%\actions-runner.
-    /// </summary>
-    private async Task RunnerButtonAsync()
-    {
-        var runnerDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "actions-runner");
-        if (!RunnerService.IsWindowsSupported() || !RunnerService.LooksLikeRunner(runnerDir))
-        {
-            Log("no configured GitHub Actions runner found (expected at %USERPROFILE%\\actions-runner).");
-            return;
-        }
-
-        _runner.Enabled = false;
-        _runnerState.Text = "working — answer the admin prompt…";
-        var install = RunnerService.Inspect(runnerDir);
-        var result = await Task.Run(() => install.ServiceExists
-            ? RunnerService.Uninstall(runnerDir)
-            : RunnerService.Install(runnerDir)).ConfigureAwait(true);
-        Log(result.Ok ? $"runner service: {result.Message}" : $"runner service failed: {result.Message}");
-        _runner.Enabled = true;
-        await RefreshRunnerRow().ConfigureAwait(true);
-    }
-
-    /// <summary>Syncs the runner button/label with the service state (Windows only).</summary>
-    private Task RefreshRunnerRow()
-    {
-        if (!RunnerService.IsWindowsSupported())
-        {
-            _runner.Visible = false;
-            _runnerState.Visible = false;
-            return Task.CompletedTask;
-        }
-        var runnerDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "actions-runner");
-        if (!RunnerService.LooksLikeRunner(runnerDir))
-        {
-            _runner.Visible = false;
-            _runnerState.Text = "no GitHub Actions runner configured";
-            _runnerState.ForeColor = Color.DimGray;
-            return Task.CompletedTask;
-        }
-
-        _runner.Visible = true;
-        var install = RunnerService.Inspect(runnerDir);
-        if (install.ServiceRunning)
-        {
-            _runner.Text = "Remove release runner service";
-            _runnerState.Text = "release runner service RUNNING (auto-start)";
-            _runnerState.ForeColor = Color.FromArgb(120, 200, 120);
-        }
-        else if (install.ServiceExists)
-        {
-            _runner.Text = "Install release runner service";
-            _runnerState.Text = "service installed but NOT running";
-            _runnerState.ForeColor = Color.FromArgb(230, 190, 90);
-        }
-        else
-        {
-            _runner.Text = "Install release runner service";
-            _runnerState.Text = "runner needs a Windows service to survive reboots";
-            _runnerState.ForeColor = Color.FromArgb(230, 190, 90);
-        }
-        return Task.CompletedTask;
     }
 
     /// <summary>Syncs the server button/label with on-disk and process state.</summary>

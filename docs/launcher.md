@@ -22,13 +22,6 @@ every release ships a fresh launcher exe, and `selfupdate` fetches and starts it
   dedicated-host files for running your own server; unchecking it again removes them on
   the next Install.
 - **PLAY** — runs the doctor; if nothing FAILs, starts `PEAK.exe`.
-- **Install / Remove release runner service** (Windows, appears only when a configured
-  GitHub Actions runner lives at `%USERPROFILE%\actions-runner`) — registers the runner's
-  service host (`bin\RunnerService.exe`) as an **auto-start Windows service** so the
-  tag-triggered release workflow builds even after a reboot. Clicking asks for admin
-  approval (UAC); the doctor shows the state as the *Release runner service* row. Without
-  the service, a runner started in a terminal dies with the next reboot and releases sit
-  in `queued` forever.
 - **Host relay** — hosts the relay **inside the launcher process** (game TCP 5055, room
   directory http://127.0.0.1:5056/rooms). Click again to stop; ports are released
   immediately. Friends join via the in-game SERVERS browser.
@@ -64,8 +57,6 @@ PeakRelayLauncher.exe host [--port 5055] [--http 5056]
 PeakRelayLauncher.exe server-sync [--server-dir <path>]   # create/refresh the server copy
 PeakRelayLauncher.exe server-start [--server-dir <path>]  # headless PeakServer.exe
 PeakRelayLauncher.exe server-stop                         # stop every PeakServer.exe
-PeakRelayLauncher.exe runner-service-install   # runner -> auto-start Windows service (asks admin)
-PeakRelayLauncher.exe runner-service-remove    # stop + remove the runner service
 PeakRelayLauncher.exe selfupdate                 # download + start the newest launcher
 PeakRelayLauncher.exe set-token [--token <pat>]  # store a private-repo read token
 PeakRelayLauncher.exe clear-token                # remove the stored token

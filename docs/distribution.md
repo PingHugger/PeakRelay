@@ -62,4 +62,20 @@ player PCs.
 
 One version in `Directory.Build.props` flows into every assembly; plugins read their
 BepInEx version from the assembly. Tags `v*` trigger the release workflow — those Releases
-are the update channel the planned launcher will poll for self- and component-updates.
+are the update channel the launcher polls for self- and component-updates.
+
+### Publisher machine: the release runner runs as a Windows service
+
+Releases can only build on the self-hosted runner (release.yml provisions the proprietary
+game DLLs in `lib/` from a local PEAK install — cloud runners have no game). On the
+publisher machine the runner at `%USERPROFILE%\actions-runner` is therefore installed as an
+**auto-start Windows service**
+(`actions.runner.PeakRelay.PingHugger.DESKTOP-4A48094`, service host
+`bin/RunnerService.exe`), so a reboot does not silently strand tag releases in `queued`.
+
+Two service-specific workflow quirks are already handled in release.yml (see the comments
+there): `shell: bash` must NOT be used (resolves to WSL bash, which refuses LocalSystem —
+Git Bash is pinned by full path), and PowerShell steps need `-ExecutionPolicy Bypass`
+(LocalSystem has no user policy). The runner service is pure ops/CI infrastructure: it is
+deliberately NOT part of the launcher — manage it with `services.msc` or
+`sc.exe stop|start|delete actions.runner.PeakRelay.PingHugger.DESKTOP-4A48094`.
