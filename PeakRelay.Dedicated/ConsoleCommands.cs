@@ -254,7 +254,7 @@ internal sealed class SayCommand : IConsoleCommand
                 throw new InvalidOperationException("network peer not ready");
 
             var options = new Photon.Realtime.RaiseEventOptions { Receivers = Photon.Realtime.ReceiverGroup.All };
-            var result = peers.OpRaiseEvent(ChatEvent.EventCode,
+            var result = peers.OpRaiseEvent(ChatEvent.ServerEventCode,
                 ChatEvent.CreatePayload("Server", text), options, SendOptions.SendReliable);
             if (!result)
                 throw new InvalidOperationException("the network rejected the message");

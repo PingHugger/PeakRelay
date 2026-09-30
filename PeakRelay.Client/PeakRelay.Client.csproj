@@ -72,6 +72,10 @@
       <HintPath>..\lib\UnityEngine.IMGUIModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>..\lib\UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="PhotonRealtime">
       <HintPath>..\lib\PhotonRealtime.dll</HintPath>
       <Private>false</Private>
