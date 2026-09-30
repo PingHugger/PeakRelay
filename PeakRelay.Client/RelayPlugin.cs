@@ -56,6 +56,12 @@ public sealed class RelayPlugin : BaseUnityPlugin
         // server browser: patches (when the game version matches) + page injection
         GameAPI.Initialize(_harmony);
 
+        // server announcements (custom PUN event 199): a passive HUD GameObject that only
+        // renders when the dedicated server broadcasts — never touches game state
+        var hud = new GameObject("PeakRelay.ChatHud");
+        UnityEngine.Object.DontDestroyOnLoad(hud);
+        hud.AddComponent<ChatHud>();
+
         Log.LogInfo($"PeakRelay {PluginVersion}: relay={RelayConfig.RelayEnabled} " +
                     $"({RelayConfig.Host}:{RelayConfig.Port}) trace={RelayConfig.TraceEnabled}");
     }

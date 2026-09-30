@@ -1,8 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
+using ExitGames.Client.Photon;
 using HarmonyLib;
+using PeakRelay.Protocol;
 
 namespace PeakRelay.Dedicated;
 
@@ -36,6 +37,7 @@ internal static class ConsoleCommandRegistry
         new HelpCommand(),
         new StatusCommand(),
         new PlayersCommand(),
+        new SayCommand(),
         new KickCommand(),
         new RestartHostCommand(),
         new StopCommand(),
@@ -214,7 +216,62 @@ internal sealed class KickCommand : IConsoleCommand
             return false;
         }
     }
-}// ---------------------------------------------------------------- server control commands
+}/// <summary>
+/// Broadcasts a server announcement to every player in the room as a custom PUN event
+/// (code 199, payload spec in PeakRelay.Protocol.ChatEvent). The game ignores unknown
+/// event codes; the PeakRelay client shim listens for 199 and shows a banner. On a vanilla
+/// client (no shim) the event arrives and is simply not displayed — harmless.
+/// </summary>
+internal sealed class SayCommand : IConsoleCommand
+{
+    public string Name => "say";
+    public string Description => "Broadcasts a server announcement to all connected players.";
+    public string Usage => "say <message>";
+
+    public void Run(string[] args)
+    {
+        var text = string.Join(' ', args).Trim();
+        if (text.Length == 0)
+        {
+            ServerConsole.Error("What should I announce? Example: say Restarting in 5 minutes");
+            return;
+        }
+        if (text.Length > ChatEvent.MaxLength)
+        {
+            ServerConsole.Error($"Messages are limited to {ChatEvent.MaxLength} characters (yours has {text.Length}).");
+            return;
+        }
+        if (!ServerConsole.RelayUp)
+        {
+            ServerConsole.Warn("The server is not connected yet — nobody would hear this. Try again once it is up.");
+            return;
+        }
+
+        try
+        {
+            var peers = Photon.Pun.PhotonNetwork.NetworkingClient?.LoadBalancingPeer;
+            if (peers == null)
+                throw new InvalidOperationException("network peer not ready");
+
+            var options = new Photon.Realtime.RaiseEventOptions { Receivers = Photon.Realtime.ReceiverGroup.All };
+            var result = peers.OpRaiseEvent(ChatEvent.EventCode,
+                ChatEvent.CreatePayload("Server", text), options, SendOptions.SendReliable);
+            if (!result)
+                throw new InvalidOperationException("the network rejected the message");
+
+            ServerConsole.Success($"Announcement sent to all players: {text}");
+        }
+        catch (Exception ex)
+        {
+            // one friendly line, no jargon — the cause is logged to server.log via Verbose
+            ServerConsole.Verbose($"say failed: {ex.Message}");
+            ServerConsole.Warn("The announcement could not be sent right now. " +
+                               "Is an expedition running? (check 'status')");
+        }
+    }
+}
+
+// ---------------------------------------------------------------- server control commands
 
 internal sealed class RestartHostCommand : IConsoleCommand
 {
