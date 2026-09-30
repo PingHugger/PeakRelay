@@ -11,25 +11,22 @@ namespace PeakRelay.Client;
 /// <summary>
 /// PeakRelay chat UI for players: renders server announcements (event 199, raised by the
 /// dedicated console) AND player chat (event 198, raised by this HUD's input box), as a
-/// banner stack top-left. Press Y (or Enter) to open the input, type, Enter to send,
-/// Escape to close — keys are consumed while the box is open so the game never sees them.
+/// banner stack top-left. Press Y to open the input, type, Enter to send, Escape to close.
 ///
-/// PEAK itself has no text chat (verified against the decompiled game); the relay routes
-/// our events like any game event — it stamps param 254 (sender actor number), which the
-/// HUD resolves to a player name. Vanilla clients ignore both codes. Events the game does
-/// use flow through OnEvent untouched (the callback is passive).
+/// While the input box is open, <see cref="ChatInputBlockPatch.ChatWantsKeyboard"/> makes
+/// the game treat it like a menu window: GUIManager.windowBlockingInput goes true and
+/// Character.CanDoInput() returns false, so the player stops moving/looking/jumping while
+/// typing (bug report: the character walked on while typing).
 ///
-/// Implementation constraints (release-runner compile finds):
-/// - NO UnityEngine.Input: the InputLegacyModule is not in every provisioned lib/ set, and
-///   OnGUI key events cover the same need portably;
-/// - OnEnable/OnDisable are NOT overridden (newer MonoBehaviourPunCallbacks defines them
-///   non-virtual) — callback registration happens lazily in OnEvent/Update instead;
-/// - all fields are initialized inline to satisfy nullable analysis under any SDK.
+/// DISPLAY ROOT CAUSE (bug report: nothing ever appeared): the class must IMPLEMENT
+/// IOnEventCallback — LoadBalancingClient.AddCallbackTarget only wires OnEvent for targets
+/// that satisfy `target is IOnEventCallback` (EventReceived += target.OnEvent). A bare
+/// public OnEvent method is never registered, so chat events arrived and were dropped.
 ///
-/// Rendering is IMGUI only: no scene objects, no prefabs, no game-UI integration — it
-/// cannot break the game's own interface.
+/// Vanilla clients ignore both codes; events the game uses flow through OnEvent untouched
+/// (the handler only reads our two codes). IMGUI only — no scene objects, no prefabs.
 /// </summary>
-public sealed class ChatHud : MonoBehaviourPunCallbacks
+public sealed class ChatHud : MonoBehaviourPunCallbacks, IOnEventCallback
 {
     private sealed class Entry
     {
@@ -45,6 +42,7 @@ public sealed class ChatHud : MonoBehaviourPunCallbacks
     private GUIStyle? _boxStyle;
     private GUIStyle? _inputStyle;
     private GUIStyle? _shadowStyle;
+    private GUIStyle? _hintStyle;
     private bool _subscribed;
 
     private string _input = "";
@@ -61,9 +59,9 @@ public sealed class ChatHud : MonoBehaviourPunCallbacks
     private const int MaxEntries = 6;
 
     /// <summary>
-    /// Lazily registers with the PUN callback list (first Update/OnGUI after Awake). Done
-    /// here instead of OnEnable because MonoBehaviourPunCallbacks declares OnEnable on some
-    /// PUN builds, which would make a plain declaration a compile error.
+    /// Lazily registers with the PUN callback list (first Update after Awake). Done here
+    /// instead of OnEnable because MonoBehaviourPunCallbacks declares OnEnable on some PUN
+    /// builds, which would make a plain declaration a compile error.
     /// </summary>
     private void EnsureSubscribed()
     {
@@ -80,6 +78,16 @@ public sealed class ChatHud : MonoBehaviourPunCallbacks
         }
     }
 
+    private void OnDestroy()
+    {
+        if (_subscribed)
+        {
+            try { PhotonNetwork.RemoveCallbackTarget(this); } catch { /* shutting down */ }
+            _subscribed = false;
+        }
+        ChatInputBlockPatch.ChatWantsKeyboard = false;
+    }
+
     private void Update()
     {
         EnsureSubscribed();
@@ -90,21 +98,22 @@ public sealed class ChatHud : MonoBehaviourPunCallbacks
         _inputOpen = true;
         _input = "";
         _focusNextFrame = true;
+        ChatInputBlockPatch.ChatWantsKeyboard = true;
     }
 
     private void CloseInput()
     {
         _inputOpen = false;
         _input = "";
+        ChatInputBlockPatch.ChatWantsKeyboard = false;
     }
 
     /// <summary>
-    /// Raw event tap: consumes only PeakRelay chat codes (198 player, 199 server); every
-    /// other event continues to the game's own handlers untouched.
+    /// Raw event tap for PeakRelay chat codes (198 player, 199 server); every other event
+    /// is ignored here and continues to the game's own handlers untouched.
     /// </summary>
     public void OnEvent(EventData eventData)
     {
-        EnsureSubscribed();
         byte? kind = eventData?.Code switch
         {
             ChatEvent.ServerEventCode => ChatEvent.ServerEventCode,
@@ -198,18 +207,35 @@ public sealed class ChatHud : MonoBehaviourPunCallbacks
     private void OnGUI()
     {
         EnsureSubscribed();
+        DrawEntries();
 
-        // open hotkey via GUI events (no UnityEngine.Input: the InputLegacyModule is not
-        // provisioned in every lib/ set — release-runner compile find)
+        // open hotkey: Y with no modifiers, only in a room, only when the game is not
+        // already blocking input (pause menu, map, etc. keep their priority)
         if (!_inputOpen && PhotonNetwork.InRoom && Event.current.type == EventType.KeyDown &&
-            Event.current.keyCode is KeyCode.Y or KeyCode.Return or KeyCode.KeypadEnter)
+            Event.current.keyCode == KeyCode.Y &&
+            !Event.current.shift && !Event.current.control && !Event.current.alt && !Event.current.command &&
+            !(GUIManager.instance != null && GUIManager.instance.windowBlockingInput))
         {
             OpenInput();
         }
 
-        DrawEntries();
         if (_inputOpen)
+        {
             DrawInput();
+            DrawHint();
+        }
+    }
+
+    private void DrawHint()
+    {
+        _hintStyle ??= new GUIStyle(GUI.skin.label)
+        {
+            fontSize = 12,
+            alignment = TextAnchor.UpperRight,
+            normal = { textColor = new Color(1f, 1f, 1f, 0.7f) },
+        };
+        GUI.Label(new Rect(Screen.width - 260f, Screen.height - 26f, 250f, 20f),
+            "Enter send · Esc close", _hintStyle);
     }
 
     private void DrawEntries()
