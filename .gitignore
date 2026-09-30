@@ -20,3 +20,6 @@ Installer.Core/Payload/payload/
 
 # Release output (regenerate with scripts/publish.sh)
 dist/
+
+# Local publish output (e.g. manual release builds for deployment testing)
+artifacts/

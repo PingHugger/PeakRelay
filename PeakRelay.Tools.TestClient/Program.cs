@@ -126,6 +126,21 @@ public static class Program
         }
         Console.WriteLine("step 4 OK: host sees guest in actor list");
 
+        // ---- PUN identity propagation (what broke players before: null UserIds crash PEAK's
+        // spawn/ban/audio flows). Both sides must know BOTH actors' ids: the local one from
+        // the auth-response echo (param 225), the remote one from the entry response's
+        // per-actor props (byte-keyed 253).
+        if (host.LocalPlayer.UserId != "host-user" || guest.LocalPlayer.UserId != "guest-user" ||
+            host.CurrentRoom!.GetPlayer(2)!.UserId != "guest-user" ||
+            guest.CurrentRoom!.GetPlayer(1)!.UserId != "host-user")
+        {
+            Console.Error.WriteLine($"user ids not propagated: host.Local={host.LocalPlayer.UserId} " +
+                                    $"guest.Local={guest.LocalPlayer.UserId} host sees 2={host.CurrentRoom?.GetPlayer(2)?.UserId} " +
+                                    $"guest sees 1={guest.CurrentRoom?.GetPlayer(1)?.UserId}");
+            return 1;
+        }
+        Console.WriteLine("step 4b OK: UserId propagated (auth echo 225 + per-actor props 253)");
+
         // ---- guest raises event 42 to Everyone
         int before = CountEvents(host, 42);
         var raise = new Dictionary<byte, object>

@@ -94,6 +94,46 @@ commands generated in `EnetPeer`, routed through `peerBase`). The socket is a du
 pipe. So `RelaySocket` can carry PUN's own datagrams opaquely over our relay protocol with
 PUN2 semantics fully intact — no reliability logic of ours, no Protocol16 handling of ours.
 
+## Player identity contract (verified against references/ — fix for the "broken player" bug)
+
+PEAK keys its whole host-side spawn flow (`CharacterSpawner.HostUpdate` →
+`ReconnectHandler.TryGetReconnectData`, `PlayerHandler.IsBanned`,
+`AudioLevels.GetPlayerLevel`) and the client-side identity flow
+(`CharacterCustomization`, `CharacterVoiceHandler`, `IsLookedAt`) on `Player.UserId`.
+When the relay left it null, the dedicated host threw `ArgumentNullException` every frame
+and remote players spawned "broken" (stuck passed-out, empty hotbar) while the world
+itself stayed fine. The relay must reproduce Photon Cloud's identity handling exactly:
+
+1. **Auth response (ops 230/231)** carries the user's id in param **225 (string)** —
+   `LoadBalancingClient` stores it into `LocalPlayer.UserId` on the master AND the game
+   connection. The relay echoes what the client sent (master auth param 225) or, on the
+   game-connection re-auth (which carries only the cached token, `{221}`), resolves the
+   token to the master session's id — so tokens are issued **unique per auth** and mapped
+   `token → UserId` in the dispatcher. Without that mapping the fresh game-session peer
+   would get a new id and the client would OVERWRITE its good `LocalPlayer.UserId` with it.
+2. **Game-entry response (Create/Join on the game role)** carries param **249** as a
+   nested `{actorNr: {props}}` table for **every actor in the room** — not just the
+   joiner. `GameEnteredOnGameServer → ReadoutProperties(gameProps, actorProps, 0)`
+   iterates ALL 249 entries (`(int)key` unbox ⇒ outer actorNr keys stay INT-typed) and
+   `InternalCacheProperties` on each inner table fills every `Player`'s identity.
+3. **Inside each actor's table**, the id rides under key **253** — and it must be encoded
+   as a P16 **BYTE** key: the client's `properties.ContainsKey(253)` binds the int
+   constant to Photon `Hashtable`'s `ContainsKey(byte)` overload (constant→byte conversion
+   beats object), which matches `boxedByte` entries only. Int-boxed or string keys are
+   different `Dictionary<object,object>` entries and miss silently (PEAK then logs
+   "Could not find UserID in player CustomProperties!" and the ArgumentNullException
+   storm begins). PUN itself writes the nickname key 255 the same byte-boxed way.
+4. **Join event (code 255)** carries `{254: joinerActorNr, 249: joinerProps, 252:
+   actorList}`; other clients feed 249 into the joiner's `Player` the same way — the
+   relay stamps 253 into the stored player props at admit time, so the join event, the
+   entry response, `GetProperties` and property broadcasts all carry it automatically.
+
+The game's own string-keyed custom props (`"UserID"`, set via `SetCustomProperties` long
+before a late joiner arrives) are a SECOND identity path PEAK reads
+(`NetworkingUtilities.GetUserId` → `CustomProperties["UserID"]`); they flow through the
+same tables — which is why the full per-actor props in the entry response matter: a
+late-joining client has no other way to receive them.
+
 ## What M1 must build on top (from this pin-down)
 
 1. `RelaySocket.Send` → wrap datagram in relay envelope → relay; relay assigns/echoes actor
@@ -101,5 +141,7 @@ PUN2 semantics fully intact — no reliability logic of ours, no Protocol16 hand
 2. Relay → `RelaySocket` incoming queue → `HandleReceivedDatagram` (already wired).
 3. Room/actor/property semantics for real LoadBalancing emulation (op-level relay in M1;
    the trace decoder in `PeakRelay.Protocol` is the starting parser).
-4. MTU: datagrams are MTU-sized (`IPhotonSocket.MTU`); our relay frame allows 16 KiB payloads,
+4. Player identity: auth response echoes 225; the game-entry response and join event carry
+   the UserId under byte-keyed 253 in every actor's props (see the identity contract above).
+5. MTU: datagrams are MTU-sized (`IPhotonSocket.MTU`); our relay frame allows 16 KiB payloads,
    comfortably above Photon's 1200-byte default MTU.
