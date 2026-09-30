@@ -30,9 +30,14 @@ jobs:
         env:
           DOTNET_INSTALL_DIR: ${{ runner.temp }}\dotnet
 
+      # IMPORTANT: shell: bash resolves to WSL bash on Windows, and WSL REFUSES to run
+      # as LocalSystem (Bash/WSL_E_LOCAL_SYSTEM_NOT_SUPPORTED) - exactly how the runner
+      # service executes (live find: v0.7.6's first release attempt failed there; the
+      # interactive v0.7.5 run had masked it). Pin Git Bash explicitly, which works both
+      # interactively and as a service.
       - name: Provision lib/ from the local PEAK install (game DLLs + BepInEx)
-        shell: bash
-        run: bash scripts/fetch-libs.sh
+        shell: cmd
+        run: '"C:\\Program Files\\Git\\bin\\bash.exe" --noprofile --norc -e -o pipefail scripts/fetch-libs.sh'
 
       - name: Build plugins (Release — payload staging copies these DLLs)
         run: |
@@ -40,9 +45,9 @@ jobs:
           dotnet build PeakRelay.Client/PeakRelay.Client.csproj -c Release
 
       - name: Stage installer payload (BepInEx, Doorstop, plugin DLLs, relay publish)
-        shell: bash
+        shell: cmd
         run: |
-          DOTNET="$(which dotnet)" BUILD_CONFIG=Release bash scripts/prepare-installer-payload.sh
+          "C:\Program Files\Git\bin\bash.exe" --noprofile --norc -e -o pipefail -c "DOTNET='$(which dotnet)' BUILD_CONFIG=Release bash scripts/prepare-installer-payload.sh"
 
       - name: Pin the loader (doctor constant must match the shipped winhttp)
         shell: powershell
