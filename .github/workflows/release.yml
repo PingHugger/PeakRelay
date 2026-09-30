@@ -18,6 +18,14 @@ jobs:
     # PEAK INSTALL. Cloud runners have no game → the first v0.6.0 attempt failed exactly
     # there. A runner registered on a machine with PEAK installed satisfies this.
     runs-on: [self-hosted, windows]
+    # Second service-runner find (after the WSL bash fix): LocalSystem has NO user
+    # PowerShell execution policy — the default `powershell -command ". '{0}'"` fails with
+    # "running scripts is disabled". Pin a custom shell template that bypasses the policy
+    # and uses -File (faithful exit codes: a throw exits 1). Steps that need something
+    # else set their own `shell:` (the bash steps do).
+    defaults:
+      run:
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
     steps:
       - uses: actions/checkout@v4
 
