@@ -302,9 +302,10 @@ internal sealed class StopCommand : IConsoleCommand
     public void Run(string[] args)
     {
         ServerConsole.Warn("Shutting the server down now. Goodbye!");
-        ServerConsole.Shutdown();
-        try { UnityEngine.Application.Quit(); } catch { /* headless quit */ }
-        Environment.Exit(0);
+        // Marshal the quit to the Unity main thread (with a hard-kill watchdog as safety
+        // net): quitting from this background console thread never ended the process
+        // (bug report: 'stop' printed its goodbye and the server just kept running).
+        ServerConsole.RequestShutdown();
     }
 }
 

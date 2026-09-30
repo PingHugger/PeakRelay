@@ -7,6 +7,7 @@ using BepInEx.Bootstrap;
 using ExitGames.Client.Photon;
 using HarmonyLib;
 using Peak.Network;
+using PeakRelay.Protocol;
 using Photon.Pun;
 using Photon.Realtime;
 using UnityEngine;
@@ -290,11 +291,17 @@ public sealed class DedicatedPlugin : BaseUnityPlugin
 
 /// <summary>
 /// PeakRelay PUN event bridge: announces player join/leave to the operator console in plain
-/// language ("Bob joined the expedition (2 of 20 slots in use)"). MonoBehaviourPunCallbacks
-/// self-registers with the PUN client — the same mechanism the game's NetworkConnector uses —
-/// so these callbacks fire reliably without touching any game component.
+/// language ("Bob joined the expedition (2 of 20 slots in use)") and logs player chat
+/// ("Bob: hello") for the operator.
+///
+/// MonoBehaviourPunCallbacks self-registers with the PUN client — the same mechanism the
+/// game's NetworkConnector uses — so the room callbacks fire reliably without touching any
+/// game component. CHAT (bug report: messages never appeared in the console) needs the
+/// interface below: LoadBalancingClient.AddCallbackTarget wires EventReceived only for
+/// targets that implement IOnEventCallback — a public OnEvent method alone is never
+/// registered (same root cause the client HUD had, fixed in v0.7.9).
 /// </summary>
-internal sealed class PunEventBridge : MonoBehaviourPunCallbacks, IInRoomCallbacks
+internal sealed class PunEventBridge : MonoBehaviourPunCallbacks, IInRoomCallbacks, IOnEventCallback
 {
     // The Player parameter MUST be fully qualified: the game's own global 'Player' class
     // would otherwise shadow Photon.Realtime.Player in these signatures (real compile find).
@@ -331,6 +338,59 @@ internal sealed class PunEventBridge : MonoBehaviourPunCallbacks, IInRoomCallbac
     {
         ServerConsole.Message("Relay link is live — opening the room…");
     }
+
+    /// <summary>
+    /// Player chat (event 198) lands in the operator console as a chat line. Server
+    /// announcements (199) are deliberately not re-logged — 'say' already reports them
+    /// when sent. Malformed payloads are ignored; the console must never crash on traffic.
+    /// </summary>
+    public void OnEvent(EventData eventData)
+    {
+        if (eventData == null)
+            return;
+        HandleChatEvent(eventData.Code, eventData.CustomData);
+    }
+
+    /// <summary>The chat-logging core, factored out so tests can drive it without PUN.</summary>
+    internal void HandleChatEvent(byte eventCode, object? payload)
+    {
+        if (eventCode != ChatEvent.PlayerEventCode)
+            return;
+        var decoded = ChatEvent.TryDecode(eventCode, payload);
+        if (decoded == null)
+            return;
+
+        ServerConsole.Chat($"{ResolveSender(null, decoded.From)}: {decoded.Text}");
+    }
+
+    /// <summary>
+    /// Prefers the room's current nickname for the sending actor (param 254, stamped by the
+    /// relay), falling back to the label the sender chose for themselves.
+    /// </summary>
+    private static string ResolveSender(EventData? eventData, string fallback)
+    {
+        try
+        {
+            if (eventData != null && eventData.Parameters.TryGetValue(254, out var actor) && actor is int actorNr)
+            {
+                var player = PhotonNetwork.CurrentRoom?.GetPlayer(actorNr);
+                if (player != null && !string.IsNullOrWhiteSpace(player.NickName))
+                    return player.NickName.Trim();
+            }
+        }
+        catch { /* name resolution is cosmetic — the fallback label is fine */ }
+        return fallback;
+    }
+
+    // ---------------------------------------------------------------- test hooks
+
+    /// <summary>Test hook: runs the chat-logging path without a Photon client.</summary>
+    internal static void LogChatForTests(byte eventCode, object payload) =>
+        new PunEventBridge().HandleChatEvent(eventCode, payload);
+
+    /// <summary>Test hook: builds a chat payload exactly the way senders do.</summary>
+    internal static Dictionary<byte, object> BuildChatPayloadForTests(string from, string text) =>
+        ChatEvent.CreatePayload(from, text);
 
     private static int MaxPlayersOrConfig()
     {
