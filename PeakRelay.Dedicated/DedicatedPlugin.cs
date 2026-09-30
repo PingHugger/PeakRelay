@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Reflection;
 using BepInEx;
 using BepInEx.Bootstrap;
@@ -32,6 +33,11 @@ namespace PeakRelay.Dedicated;
 /// The vanilla HostState overwrites RoomName unless CurrentPlayer.Tags contains "Player1"
 /// (a play-mode test tag that headless never gets); DedicatedPatches keeps our configured
 /// name instead — config is authoritative (useVanillaName restores stock behavior).
+///
+/// Operator console: when config.console is on (default), ServerLog lines are rerouted
+/// through ServerConsole (friendly phrasing) and a PunEventBridge announces join/leave in
+/// plain language. Console commands run on a background stdin thread; anything that must
+/// touch Unity is marshaled back to the main loop via MainThreadJobs.
 /// </summary>
 [BepInPlugin(PluginGuid, PluginName, BuildVersion.Version)]
 [BepInDependency("com.bepinex.plugins.serverconsole", BepInDependency.DependencyFlags.SoftDependency)]
@@ -45,6 +51,12 @@ public sealed class DedicatedPlugin : BaseUnityPlugin
         typeof(DedicatedPlugin).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
             ?.InformationalVersion.Split('+')[0] ?? BuildVersion.Version;
 
+    /// <summary>Singleton access for console commands (null before Awake).</summary>
+    internal static DedicatedPlugin? Instance { get; private set; }
+
+    /// <summary>Work handed over from the console thread, drained every Update.</summary>
+    internal static readonly ConcurrentQueue<Action> MainThreadJobs = new();
+
     private Harmony? _harmony;
     private DedicatedConfig _config = new();
     private bool _booted;
@@ -53,6 +65,8 @@ public sealed class DedicatedPlugin : BaseUnityPlugin
 
     private void Awake()
     {
+        Instance = this;
+
         // plugin directory: BepInEx/plugins/PeakRelay.Dedicated/
         var pluginDir = System.IO.Path.GetDirectoryName(typeof(DedicatedPlugin).Assembly.Location) ?? ".";
         DedicatedState.Config = _config = DedicatedConfig.Load(pluginDir);
@@ -74,12 +88,29 @@ public sealed class DedicatedPlugin : BaseUnityPlugin
                        $"password={(string.IsNullOrEmpty(_config.Password) ? "no" : "yes")} maxPlayers={_config.MaxPlayers} " +
                        $"visible={_config.Visible} open={_config.Open} relay={_config.RelayHost}:{_config.RelayPort} " +
                        $"autoHost={_config.AutoHost} useVanillaName={_config.UseVanillaName} " +
-                       $"noSteam={noSteam}{(noSteam ? $" hostName='{_config.HostName}'" : "")}");
+                       $"noSteam={noSteam}{(noSteam ? $" hostName='{_config.HostName}'" : "")} " +
+                       $"console={_config.Console}");
+
+        if (_config.Console)
+        {
+            ServerLog.Routed = ServerConsole.HandleServerLog;
+            ServerConsole.Start(_config);
+        }
+        else
+        {
+            ServerLog.Routed = null; // classic stdout logging for piped/service hosts
+        }
+
+        var bridge = new GameObject("PeakRelay.PunEventBridge");
+        DontDestroyOnLoad(bridge);
+        bridge.AddComponent<PunEventBridge>();
+
         StartCoroutine(Boot());
     }
 
     private void OnDestroy()
     {
+        ServerConsole.Shutdown();
         _harmony?.UnpatchSelf();
     }
 
@@ -129,11 +160,21 @@ public sealed class DedicatedPlugin : BaseUnityPlugin
     }
 
     /// <summary>
-    /// Own connect path instead of NetworkingUtilities.ConnectToNetwork: the game version
-    /// reads Application.version and Steam persona names, both fragile headless. We set the
-    /// same fields ourselves and connect with an explicit AppSettings — this is the same
-    /// call shape PUN's ConnectUsingSettings(appSettings) overload takes.
+    /// Console command 'resethost' (runs on the console thread): queue the host-cycle
+    /// restart onto the Unity main thread — Unity objects may only be touched there.
     /// </summary>
+    internal void PluginStartHosting(string roomName)
+    {
+        MainThreadJobs.Enqueue(() =>
+        {
+            _booted = false;
+            DedicatedState.CreateRoomSent = false;
+            _createRoomAttempts = 0;
+            ServerConsole.RelayUp = false;
+            StartCoroutine(StartHosting(roomName));
+        });
+    }
+
     /// <summary>
     /// Connect through the game's own path (NetworkingUtilities.ConnectToNetwork); the
     /// ConnectRedirectPatch prefix points it at the relay. Our previous own-call approach
@@ -150,6 +191,13 @@ public sealed class DedicatedPlugin : BaseUnityPlugin
         if (!DedicatedPatches.IsHeadless)
             return;
 
+        // Drain console-thread work (e.g. resethost) before the network tick.
+        while (MainThreadJobs.TryDequeue(out var job))
+        {
+            try { job(); }
+            catch (Exception ex) { ServerLog.Error($"console command failed: {ex.Message}"); }
+        }
+
         // Mirror the room-creation retry the vanilla flow gets from its modal ("Try again"):
         // if CreateRoom failed, NetworkConnector switches back to DefaultConnectionState and
         // we re-arm HostState.
@@ -160,10 +208,12 @@ public sealed class DedicatedPlugin : BaseUnityPlugin
                 _booted = true;
                 ServerLog.Info($"room '{PhotonNetwork.CurrentRoom?.Name}' joined — dedicated server is UP " +
                                $"(actorNr={PhotonNetwork.LocalPlayer.ActorNumber}, maxPlayers={PhotonNetwork.CurrentRoom?.MaxPlayers})");
+                ServerConsole.RelayUp = true;
             }
             else if (_booted && PhotonNetwork.NetworkClientState == ClientState.Disconnected)
             {
                 ServerLog.Warn("disconnected from relay — restarting host cycle");
+                ServerConsole.RelayUp = false;
                 _booted = false;
                 DedicatedState.CreateRoomSent = false;
                 _createRoomAttempts++;
@@ -235,5 +285,56 @@ public sealed class DedicatedPlugin : BaseUnityPlugin
             host.RoomName = DedicatedState.ConfiguredRoomName;
         }
         ConnectToRelay();
+    }
+}
+
+/// <summary>
+/// PeakRelay PUN event bridge: announces player join/leave to the operator console in plain
+/// language ("Bob joined the expedition (2 of 20 slots in use)"). MonoBehaviourPunCallbacks
+/// self-registers with the PUN client — the same mechanism the game's NetworkConnector uses —
+/// so these callbacks fire reliably without touching any game component.
+/// </summary>
+internal sealed class PunEventBridge : MonoBehaviourPunCallbacks, IInRoomCallbacks
+{
+    // The Player parameter MUST be fully qualified: the game's own global 'Player' class
+    // would otherwise shadow Photon.Realtime.Player in these signatures (real compile find).
+    public override void OnPlayerEnteredRoom(Photon.Realtime.Player newPlayer)
+    {
+        if (newPlayer.IsLocal)
+            return;
+        var players = ServerConsole.PlayersSnapshot();
+        ServerConsole.Success($"{newPlayer.NickName} joined the expedition " +
+                              $"({players.Count} of {MaxPlayersOrConfig()} slots in use).");
+    }
+
+    public override void OnPlayerLeftRoom(Photon.Realtime.Player leavingPlayer)
+    {
+        if (leavingPlayer.IsLocal)
+            return;
+        var players = ServerConsole.PlayersSnapshot();
+        ServerConsole.Message($"{leavingPlayer.NickName} left the expedition " +
+                              $"({players.Count} of {MaxPlayersOrConfig()} slots in use).");
+    }
+
+    public override void OnConnected()
+    {
+        ServerConsole.Message("Connected to the game network (relay).");
+    }
+
+    public override void OnDisconnected(DisconnectCause cause)
+    {
+        ServerConsole.RelayUp = false;
+        ServerConsole.Warn("The server lost its connection — it will try to rejoin automatically.");
+    }
+
+    public override void OnConnectedToMaster()
+    {
+        ServerConsole.Message("Relay link is live — opening the room…");
+    }
+
+    private static int MaxPlayersOrConfig()
+    {
+        try { return PhotonNetwork.CurrentRoom?.MaxPlayers ?? DedicatedState.Config?.MaxPlayers ?? 0; }
+        catch { return DedicatedState.Config?.MaxPlayers ?? 0; }
     }
 }

@@ -37,6 +37,16 @@ public sealed class DedicatedConfig
     /// <summary>Player name used when Steam cannot provide a persona name (noSteam mode).</summary>
     public string HostName { get; init; } = "DedicatedHost";
 
+    /// <summary>
+    /// Show the friendly operator console window (AllocConsole — the server otherwise has no
+    /// window at all under -batchmode). Technical relay lines stay hidden unless
+    /// <see cref="ConsoleVerbose"/> is set; see ServerConsole for the phrasing rules.
+    /// </summary>
+    public bool Console { get; init; } = true;
+
+    /// <summary>Show developer-oriented relay/serialization lines in the console too (server.log always has them).</summary>
+    public bool ConsoleVerbose { get; set; } = false;
+
     public static DedicatedConfig Load(string pluginDir)
     {
         var config = new DedicatedConfig();
@@ -80,6 +90,8 @@ public sealed class DedicatedConfig
             LogDatagrams = B("logDatagrams") ?? config.LogDatagrams,
             NoSteam = B("noSteam") ?? config.NoSteam,
             HostName = S("hostName") ?? config.HostName,
+            Console = B("console") ?? config.Console,
+            ConsoleVerbose = B("consoleVerbose") ?? config.ConsoleVerbose,
         };
     }
 
@@ -105,6 +117,8 @@ public sealed class DedicatedConfig
             LogDatagrams = EnvBool("PEAKRELAY_LOGDATAGRAMS") ?? config.LogDatagrams,
             NoSteam = EnvBool("PEAKRELAY_NOSTEAM") ?? config.NoSteam,
             HostName = Env("PEAKRELAY_HOSTNAME") ?? config.HostName,
+            Console = EnvBool("PEAKRELAY_CONSOLE") ?? config.Console,
+            ConsoleVerbose = EnvBool("PEAKRELAY_CONSOLEVERBOSE") ?? config.ConsoleVerbose,
         };
     }
 }
@@ -125,10 +139,35 @@ public static class ServerLog
     public static void Warn(string message) => Write("WARN ", message);
     public static void Error(string message) => Write("ERROR", message);
 
+    /// <summary>
+    /// Routed console line — set once by the plugin. When null, ServerLog writes straight to
+    /// stdout; when set, stdout is suppressed and the friendly console decides what appears.
+    /// </summary>
+    internal static Action<string>? Routed;
+
+    /// <summary>File-only mirror used by the console (keeps server.log the complete record).</summary>
+    internal static void MirrorToDedicatedLog(string consoleLine)
+    {
+        try
+        {
+            if (_logPath == null)
+                return;
+            lock (Sync)
+                File.AppendAllText(_logPath, consoleLine + Environment.NewLine);
+        }
+        catch
+        {
+            // logging must never take the server down
+        }
+    }
+
     private static void Write(string level, string message)
     {
         var line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [{level}] {message}";
-        Console.WriteLine(line);
+        if (Routed == null)
+            Console.WriteLine(line);
+        else
+            Routed(message);
         try
         {
             if (_logPath == null)

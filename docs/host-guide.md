@@ -56,14 +56,17 @@ This unpacks BepInEx into the PEAK install, copies the built plugin DLLs to
   "useVanillaName": false,
   "logDatagrams": false,
   "noSteam": null,
-  "hostName": "DedicatedHost"
+  "hostName": "DedicatedHost",
+  "console": true,
+  "consoleVerbose": false
 }
 ```
 
 Every field has an environment-variable override — `PEAKRELAY_ROOM`,
 `PEAKRELAY_DISPLAYNAME`, `PEAKRELAY_MAXPLAYERS`, `PEAKRELAY_HOST`, `PEAKRELAY_PORT`,
 `PEAKRELAY_AUTOHOST`, `PEAKRELAY_VISIBLE`, `PEAKRELAY_OPEN`, `PEAKRELAY_LOGDATAGRAMS`,
-`PEAKRELAY_NOSTEAM`, `PEAKRELAY_HOSTNAME` — so container orchestrators never need to
+`PEAKRELAY_NOSTEAM`, `PEAKRELAY_HOSTNAME`, `PEAKRELAY_CONSOLE`,
+`PEAKRELAY_CONSOLEVERBOSE` — so container orchestrators never need to
  touch files. (`displayName`/`mode`/`password` are what the server browser shows;
 `hostName` is the host's player name when Steam can't provide one — see §5.)
 
@@ -101,6 +104,40 @@ first boot look hung when it is merely silent.
 Success markers in `server.log`, in order: `config: …` → `GameHandler ready` →
 `Title scene active` → `HostState armed (room '…')` → `CreateRoom('…')` →
 `room created` → `room '…' joined — dedicated server is UP`.
+
+### The operator console window
+
+With `console: true` (the default) the server opens its own console window — even when
+started by the launcher or by double-clicking `PeakServer.exe`. Everything there is written
+in plain language for non-developers:
+
+```
+2026-09-30 17:05 [PEAK] The expedition 'DBPEAK' is now open for adventurers (up to 20 players).
+2026-09-30 17:06 [PEAK] Bob joined the expedition (1 of 20 slots in use).
+2026-09-30 17:07 [PEAK] The server is up and running.
+```
+
+Technical relay lines (datagram sizes, serialization details) stay hidden — they still go
+to `server.log`. Type `verbose on` in the console to see them, `verbose off` to hide them
+again (`consoleVerbose: true` in `server.json` does the same from startup).
+
+**Commands** — type one and press Enter (input is echoed as `[YOU] > …`):
+
+| Command | What it does |
+|---|---|
+| `help [command]` | Lists every command, or explains one |
+| `status` | Is the server running, which expedition, how full is it |
+| `players` | Who is on the server right now |
+| `kick <name or slot>` | Removes a player (same path as the in-game kick button) |
+| `say <message>` | Broadcasts a message to all players in the round |
+| `resethost` | Restarts the expedition hosting (players rejoin automatically) |
+| `stop` | Shuts the server down cleanly |
+| `verbose <on\|off>` | Shows/hides technical detail (for support requests) |
+| `clear` | Clears the window (`server.log` keeps everything) |
+
+Anything the console does is also mirrored to `server.log`, so the file remains the complete
+record. Set `console: false` to run without the window (output goes to stdout, e.g. for
+services or Docker where `PEAKRELAY_CONSOLE=false` keeps the container log clean).
 
 ## 5. Running without Steam (headless dedicated mode)
 

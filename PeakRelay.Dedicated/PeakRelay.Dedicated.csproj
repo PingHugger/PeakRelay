@@ -5,6 +5,10 @@
     <RootNamespace>PeakRelay.Dedicated</RootNamespace>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="PeakRelay.Dedicated.Tests" />
+  </ItemGroup>
+
   <!-- Single version source: generate the const the [BepInPlugin] attribute needs -->
   <Target Name="GenerateVersionConst" BeforeTargets="BeforeBuild;CoreCompile">
     <PropertyGroup>
