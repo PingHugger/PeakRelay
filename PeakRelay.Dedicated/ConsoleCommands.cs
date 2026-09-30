@@ -37,7 +37,6 @@ internal static class ConsoleCommandRegistry
         new StatusCommand(),
         new PlayersCommand(),
         new KickCommand(),
-        new SayCommand(),
         new RestartHostCommand(),
         new StopCommand(),
         new VerboseCommand(),
@@ -215,48 +214,7 @@ internal sealed class KickCommand : IConsoleCommand
             return false;
         }
     }
-}
-
-internal sealed class SayCommand : IConsoleCommand
-{
-    public string Name => "say";
-    public string Description => "Broadcasts a text message to everyone on the server (shows in their chat).";
-    public string Usage => "say <message>";
-
-    public void Run(string[] args)
-    {
-        var text = string.Join(' ', args).Trim();
-        if (text.Length == 0)
-        {
-            ServerConsole.Error("What should I say? Example: say Restarting in 5 minutes");
-            return;
-        }        try
-        {
-            // RPC the game's own chat receive path on every client (the same mechanism the
-            // in-game chat uses: an RPC on the chat component's PhotonView). Method resolves
-            // only once the round has loaded; before that there is no chat to write into.
-            var handlerType = AccessTools.TypeByName("ChatHandler") ?? AccessTools.TypeByName("Chat");
-            if (handlerType == null)
-                throw new MissingMethodException("chat system not loaded");
-            var handler = UnityEngine.Object.FindFirstObjectByType(handlerType);
-            if (handler == null)
-                throw new MissingMethodException("chat view not in scene");
-            var chatView = ((UnityEngine.Component)handler).GetComponent<Photon.Pun.PhotonView>();
-            if (chatView == null)
-                throw new MissingMethodException("chat view has no network view");
-
-            chatView.RPC("ReceiveChatMessage", Photon.Pun.RpcTarget.All, "Server", text);
-            ServerConsole.Success($"Message sent to all players: {text}");
-        }
-        catch
-        {
-            ServerConsole.Warn("A text chat is only available while an expedition is running. " +
-                               "Your message was not sent — try again once players are in the round.");
-        }
-    }
-}
-
-// ---------------------------------------------------------------- server control commands
+}// ---------------------------------------------------------------- server control commands
 
 internal sealed class RestartHostCommand : IConsoleCommand
 {

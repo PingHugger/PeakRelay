@@ -118,7 +118,7 @@ public class FriendlyPhrasingTests
         ServerConsole.ExecuteCommand("help");
 
         Assert.Contains(seen, line => line.Text.Contains("Things you can type here"));
-        foreach (var expected in new[] { "help", "status", "players", "kick", "say", "resethost", "stop", "verbose", "clear" })
+        foreach (var expected in new[] { "help", "status", "players", "kick", "resethost", "stop", "verbose", "clear" })
             Assert.Contains(seen, line => line.Text.Contains(expected));
     }
 

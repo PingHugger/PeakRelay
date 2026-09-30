@@ -129,7 +129,6 @@ again (`consoleVerbose: true` in `server.json` does the same from startup).
 | `status` | Is the server running, which expedition, how full is it |
 | `players` | Who is on the server right now |
 | `kick <name or slot>` | Removes a player (same path as the in-game kick button) |
-| `say <message>` | Broadcasts a message to all players in the round |
 | `resethost` | Restarts the expedition hosting (players rejoin automatically) |
 | `stop` | Shuts the server down cleanly |
 | `verbose <on\|off>` | Shows/hides technical detail (for support requests) |
