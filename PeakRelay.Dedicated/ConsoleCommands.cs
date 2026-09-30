@@ -1,8 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
+using ExitGames.Client.Photon;
 using HarmonyLib;
+using PeakRelay.Protocol;
 
 namespace PeakRelay.Dedicated;
 
@@ -36,8 +37,8 @@ internal static class ConsoleCommandRegistry
         new HelpCommand(),
         new StatusCommand(),
         new PlayersCommand(),
-        new KickCommand(),
         new SayCommand(),
+        new KickCommand(),
         new RestartHostCommand(),
         new StopCommand(),
         new VerboseCommand(),
@@ -215,12 +216,16 @@ internal sealed class KickCommand : IConsoleCommand
             return false;
         }
     }
-}
-
+}/// <summary>
+/// Broadcasts a server announcement to every player in the room as a custom PUN event
+/// (code 199, payload spec in PeakRelay.Protocol.ChatEvent). The game ignores unknown
+/// event codes; the PeakRelay client shim listens for 199 and shows a banner. On a vanilla
+/// client (no shim) the event arrives and is simply not displayed — harmless.
+/// </summary>
 internal sealed class SayCommand : IConsoleCommand
 {
     public string Name => "say";
-    public string Description => "Broadcasts a text message to everyone on the server (shows in their chat).";
+    public string Description => "Broadcasts a server announcement to all connected players.";
     public string Usage => "say <message>";
 
     public void Run(string[] args)
@@ -228,30 +233,40 @@ internal sealed class SayCommand : IConsoleCommand
         var text = string.Join(' ', args).Trim();
         if (text.Length == 0)
         {
-            ServerConsole.Error("What should I say? Example: say Restarting in 5 minutes");
+            ServerConsole.Error("What should I announce? Example: say Restarting in 5 minutes");
             return;
-        }        try
-        {
-            // RPC the game's own chat receive path on every client (the same mechanism the
-            // in-game chat uses: an RPC on the chat component's PhotonView). Method resolves
-            // only once the round has loaded; before that there is no chat to write into.
-            var handlerType = AccessTools.TypeByName("ChatHandler") ?? AccessTools.TypeByName("Chat");
-            if (handlerType == null)
-                throw new MissingMethodException("chat system not loaded");
-            var handler = UnityEngine.Object.FindFirstObjectByType(handlerType);
-            if (handler == null)
-                throw new MissingMethodException("chat view not in scene");
-            var chatView = ((UnityEngine.Component)handler).GetComponent<Photon.Pun.PhotonView>();
-            if (chatView == null)
-                throw new MissingMethodException("chat view has no network view");
-
-            chatView.RPC("ReceiveChatMessage", Photon.Pun.RpcTarget.All, "Server", text);
-            ServerConsole.Success($"Message sent to all players: {text}");
         }
-        catch
+        if (text.Length > ChatEvent.MaxLength)
         {
-            ServerConsole.Warn("A text chat is only available while an expedition is running. " +
-                               "Your message was not sent — try again once players are in the round.");
+            ServerConsole.Error($"Messages are limited to {ChatEvent.MaxLength} characters (yours has {text.Length}).");
+            return;
+        }
+        if (!ServerConsole.RelayUp)
+        {
+            ServerConsole.Warn("The server is not connected yet — nobody would hear this. Try again once it is up.");
+            return;
+        }
+
+        try
+        {
+            var peers = Photon.Pun.PhotonNetwork.NetworkingClient?.LoadBalancingPeer;
+            if (peers == null)
+                throw new InvalidOperationException("network peer not ready");
+
+            var options = new Photon.Realtime.RaiseEventOptions { Receivers = Photon.Realtime.ReceiverGroup.All };
+            var result = peers.OpRaiseEvent(ChatEvent.EventCode,
+                ChatEvent.CreatePayload("Server", text), options, SendOptions.SendReliable);
+            if (!result)
+                throw new InvalidOperationException("the network rejected the message");
+
+            ServerConsole.Success($"Announcement sent to all players: {text}");
+        }
+        catch (Exception ex)
+        {
+            // one friendly line, no jargon — the cause is logged to server.log via Verbose
+            ServerConsole.Verbose($"say failed: {ex.Message}");
+            ServerConsole.Warn("The announcement could not be sent right now. " +
+                               "Is an expedition running? (check 'status')");
         }
     }
 }
