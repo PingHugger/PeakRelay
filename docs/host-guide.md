@@ -158,5 +158,11 @@ enter the room code in the standard join UI. The relay's browser UI
   `noSteam: true` (or check that the deployed `PeakRelay.Dedicated.dll` is current).
 * **`KeyNotFoundException: 'SteamLobbyHandler'` after connect** — running an older
   plugin build without the noSteam patch set while Steam is absent; update the plugin.
-* **Audio slider `ArgumentNullException` at spawn** — cosmetic one-time error in the
-  game's audio UI (null `UserId` without Steam); no gameplay or relay impact.
+* **`ArgumentNullException ... Parameter name: key` storms at spawn (ReconnectHandler /
+  PlayerHandler.IsBanned / AudioLevels), players spawn "broken" (stuck passed-out, empty
+  hotbar) while the world works** — an OUTDATED RELAY: builds before the player-identity
+  fix left every `Player.UserId` null (see `docs/protocol-notes.md`, "Player identity
+  contract"). Replace `PeakRelay.Server.dll` + `PeakRelay.Protocol.dll` on the relay and
+  restart it; the dedicated host re-connects on its own host cycle. The old
+  "Audio slider ArgumentNullException — cosmetic" note described the same root cause
+  before it was understood; it is not cosmetic and not headless-only.

@@ -49,6 +49,17 @@ public static class LbParam
     public const byte Address = 230;
     public const byte Region = 210;
     public const byte UriPath = 209;
+
+    /// <summary>
+    /// Player-properties key carrying the PUN identity (Photon.Realtime.ActorProperties.UserId).
+    /// Value must be encoded as a P16 BYTE so it lands in the client's Hashtable byte-boxed:
+    /// the C# lookup properties.ContainsKey(253) binds the int constant to Hashtable's byte
+    /// overload (constant conversion beats object), and Photon's boxedByte table matches
+    /// boxed byte keys only — a differently-boxed 253 silently leaves Player.UserID null
+    /// (PEAK then throws ArgumentNullException from its spawn/ban/audio flows every frame).
+    /// </summary>
+    public const byte PlayerPropUserId = 253;
+    public const byte PlayerPropNickName = byte.MaxValue; // ActorProperties.PlayerName, byte-keyed
 }
 
 /// <summary>LoadBalancing event codes (Photon.Realtime.EventCode).</summary>
@@ -375,6 +386,37 @@ public static class P16
         int op = s.ReadByte();
         if (op < 0) throw new InvalidDataException("empty payload");
         return new LbRequest { Op = (byte)op, Parameters = ReadParameterTable(s) };
+    }
+
+    /// <summary>
+    /// Decodes an encoded operation-response body ([op][i16 ret][tagged dbg][paramtable])
+    /// back into an LbMessage. Used by tests to assert exact response shapes; values decode
+    /// via the same ReadValue the request path uses (Raw passthrough for exotic content).
+    /// </summary>
+    public static bool TryDecodeResponse(byte[] payload, out LbMessage message)
+    {
+        message = new LbMessage();
+        try
+        {
+            using var s = new MemoryStream(payload);
+            int code = s.ReadByte();
+            if (code < 0) return false;
+            short returnCode = ReadShort(s);
+            var debugTag = (byte)s.ReadByte();
+            var debugMessage = ReadValue(s, debugTag) as string;
+            message = new LbMessage
+            {
+                Code = (byte)code,
+                ReturnCode = returnCode,
+                DebugMessage = debugMessage,
+                Parameters = ReadParameterTable(s),
+            };
+            return true;
+        }
+        catch (Exception ex) when (ex is InvalidDataException or EndOfStreamException or IOException)
+        {
+            return false;
+        }
     }
 
     /// <summary>

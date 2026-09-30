@@ -121,23 +121,71 @@ public sealed class LbDispatcher
         }));
     }
 
+    /// <summary>
+    /// Last-resort identity so key 253 is never missing: clients send 225 on their master
+    /// auth (OpAuthenticate carries UserId from AuthValues); the game-connection re-auth
+    /// carries ONLY the token, which maps back to the master session's id below.
+    /// </summary>
+    private void EnsureUserId(LbPeer peer)
+    {
+        if (string.IsNullOrEmpty(peer.UserId))
+            peer.UserId = $"relay-{Guid.NewGuid().ToString("N")[..6]}";
+    }
+
+    // The master→game redirect is a NEW TCP session (new LbPeer, empty state); the client
+    // identifies itself there only by re-sending the token from its master auth response
+    // (OpAuthenticate sends {221} alone once a token is cached). Tokens are therefore issued
+    // unique per auth and mapped to the authenticated UserId here — Photon Cloud tokens
+    // identify the user session the same way. Without the mapping the game-session peer
+    // would get a fresh synthetic id and the client would OVERWRITE its good LocalPlayer
+    // .UserId with it (auth-response param 225 always wins client-side).
+    private readonly object _tokenSync = new();
+    private readonly Dictionary<string, string> _tokenUsers = new(StringComparer.Ordinal);
+
+    private byte[] RegisterToken(string userId)
+    {
+        var token = new byte[8];
+        Random.Shared.NextBytes(token);
+        lock (_tokenSync)
+            _tokenUsers[Convert.ToHexString(token)] = userId;
+        return token;
+    }
+
+    private string? LookupTokenUser(byte[] token)
+    {
+        lock (_tokenSync)
+            return _tokenUsers.TryGetValue(Convert.ToHexString(token), out var userId) ? userId : null;
+    }
+
     private void HandleAuthenticate(LbPeer peer, LbRequest request)
     {
         peer.Authenticated = true;
+        bool hasToken = request.Parameters.TryGetValue(LbParam.Token, out var tokenObj) &&
+                        tokenObj is byte[] token && token.Length > 0;
+
         if (request.Parameters.TryGetValue(LbParam.UserId, out var userId) && userId is string uid)
             peer.UserId = uid;
+        string? tokenUser = hasToken ? LookupTokenUser((byte[])tokenObj!) : null;
+        if (tokenUser != null)
+            peer.UserId = tokenUser; // game reconnect: adopt the master session's identity
         if (request.Parameters.TryGetValue(LbParam.AppVersion, out var gv) && gv is string version)
             peer.GameVersion = version;
+        EnsureUserId(peer);
 
         // A token-carrying auth is the game-server reconnect (OpAuthenticate sends ONLY {221}
         // when a token is cached): switch this connection to the Game role.
-        if (request.Parameters.ContainsKey(LbParam.Token))
+        if (hasToken)
             peer.Role = RelayServerRole.Game;
 
-        // token (221) is what the client caches and re-sends as its game-server auth
+        // token (221) is what the client caches and re-sends as its game-server auth — issued
+        // unique here so that re-auth maps back to this identity; the UserId echo (225) is
+        // what Realtime stores into LocalPlayer.UserId (LoadBalancingClient auth-response
+        // handling reads 225 on master and game connections).
+        var issuedToken = hasToken ? (byte[])tokenObj! : RegisterToken(peer.UserId!);
         SendResponse(peer, request.Op, LbError.Ok, parameters: new Dictionary<byte, object>
         {
-            [LbParam.Token] = Array.Empty<byte>(),
+            [LbParam.Token] = issuedToken,
+            [LbParam.UserId] = peer.UserId!,
         });
     }
 
@@ -238,25 +286,42 @@ public sealed class LbDispatcher
                 foreach (var (key, value) in playerProps)
                     peer.PlayerProperties[key] = value;
             }
+            // PUN identity contract (Photon.Realtime.Player.InternalCacheProperties): the
+            // player-properties table must carry the UserId under key 253, encoded as a P16
+            // BYTE key — the client's ContainsKey(253) binds to Photon Hashtable's byte
+            // overload (boxedByte lookup — see LbParam.PlayerPropUserId). Without this entry
+            // Player.UserID stays null (PEAK then throws ArgumentNullException from its
+            // spawn/ban/audio flows every frame). The id value itself is a string.
+            peer.PlayerProperties[LbParam.PlayerPropUserId] = peer.UserId!;
 
-            // game-server entry response: {255: name, 254: actorNr, 252: actorList, 249: joiner
-            // props, 248: room props} — Realtime's GameEnteredOnGameServer reads 249/248 and
-            // feeds ReadoutProperties with targetActorNr=0, where 249 MUST be nested
-            // {actorNr: {props}} (live run: a flat table hit '(int)key' InvalidCastException
-            // on the joiner's string keys and aborted the game-entry op response).
             var actorList = new int[room.Actors.Count];
             int i = 0;
             foreach (var key in room.Actors.Keys)
                 actorList[i++] = key;
+            // game-server entry response: {255: name, 254: actorNr, 252: actorList, 249:
+            // ALL actors' props, 248: room props} — Realtime's GameEnteredOnGameServer reads
+            // 249/248 and feeds ReadoutProperties with targetActorNr=0, where 249 MUST be
+            // nested {actorNr: {props}} (live run: a flat table hit '(int)key'
+            // InvalidCastException on the joiner's string keys and aborted the game-entry op
+            // response; outer actorNr keys stay INT-typed for that unbox) and every entry
+            // must carry key 253 (byte-boxed UserId): ReadoutProperties iterates ALL 249
+            // entries and UpdatedActorList otherwise creates property-less Player stubs,
+            // leaving remote identities null.
+            var allActorProps = new Hashtable
+            {
+                [peer.ActorNumber] = CopyOf(peer.PlayerProperties),
+            };
+            foreach (var actor in room.Actors.Values)
+            {
+                if (actor != peer)
+                    allActorProps[actor.ActorNumber] = CopyOf(actor.PlayerProperties);
+            }
             SendResponse(peer, request.Op, LbError.Ok, parameters: new Dictionary<byte, object>
             {
                 [LbParam.RoomName] = roomName,
                 [LbParam.ActorNr] = peer.ActorNumber,
                 [LbParam.ActorList] = actorList,
-                [LbParam.PlayerProperties] = new Hashtable
-                {
-                    [peer.ActorNumber] = CopyOf(peer.PlayerProperties),
-                },
+                [LbParam.PlayerProperties] = allActorProps,
                 [LbParam.GameProperties] = room.SnapshotGameProperties(),
             });
 

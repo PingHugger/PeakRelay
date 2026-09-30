@@ -137,9 +137,22 @@ public sealed class PhotonClientHarness : LoadBalancingClient
 
     public override void OnOperationResponse(OperationResponse response)
     {
+        if (response.OperationCode is 230 or 231)
+        {
+            var keys = new List<string>();
+            foreach (var (k, v) in response.Parameters)
+                keys.Add($"{k}:{v?.GetType().Name}={Truncate(v)}");
+            Console.WriteLine($"[harness {UserId}] auth-resp rc={response.ReturnCode} server={Server} params=[{string.Join(", ", keys)}] localUserId={LocalPlayer?.UserId}");
+        }
         Responses.Add(response);
         _responseEvent.Set();
         base.OnOperationResponse(response);
+    }
+
+    private static string Truncate(object? v)
+    {
+        var s = v is byte[] b ? Convert.ToHexString(b, 0, Math.Min(b.Length, 8)) : v?.ToString() ?? "null";
+        return s.Length > 40 ? s[..40] + "…" : s;
     }
 
     public override void OnEvent(EventData photonEvent)
