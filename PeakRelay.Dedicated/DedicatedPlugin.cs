@@ -102,6 +102,10 @@ public sealed class DedicatedPlugin : BaseUnityPlugin
             ServerLog.Routed = null; // classic stdout logging for piped/service hosts
         }
 
+        // Gamemode system: resolves the configured mode, loads the gamemodes folder, and
+        // keeps the mode authoritative when runs start (see GameModeEngine/GameModePatches).
+        GameModeEngine.Initialize(pluginDir, _config.Mode);
+
         var bridge = new GameObject("PeakRelay.PunEventBridge");
         DontDestroyOnLoad(bridge);
         bridge.AddComponent<PunEventBridge>();
@@ -198,6 +202,9 @@ public sealed class DedicatedPlugin : BaseUnityPlugin
             try { job(); }
             catch (Exception ex) { ServerLog.Error($"console command failed: {ex.Message}"); }
         }
+
+        // Sandbox no-ghost auto-revive (only acts when the active mode wants it).
+        GameModeEngine.Tick();
 
         // Mirror the room-creation retry the vanilla flow gets from its modal ("Try again"):
         // if CreateRoom failed, NetworkConnector switches back to DefaultConnectionState and

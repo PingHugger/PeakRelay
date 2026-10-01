@@ -1,0 +1,20 @@
+Copy this file to e.g. "chill-climb.json" to create your own gamemode.
+
+{
+  "name": "chill-climb",            // lowercase letters/digits/dash, this is what you type
+  "description": "Relaxed climbing with extra snacks.",
+  "ascent": -1,                     // -1 peaceful … 9; omit to keep the game's default flow
+  "sandboxNoGhost": false,          // true = PeakRelay auto-revives dead players at the next campfire
+  "settings": {                     // game RunSettings overrides (names must match the game)
+    "FallDamage": 0,                //   0 off, 1 half, 2 normal, 3 double
+    "HungerRate": 1,                //   0 off, 1 slow, 2 normal, 3 fast
+    "Hazard_Zombies": 0,            //   0 off, 1 on
+    "GrappleMode": 1                //   1 = everyone spawns with the rescue hook
+  }
+}
+
+Useful setting names: Fog, HungerRate, FallDamage, EtcDamage, PetrificationDamage,
+ColdNight, ItemWeight, FlaresAtPeak, ClimbingStaminaUsage, RevivalAllowed,
+GrappleMode, ChaosItems, MiniRun, TimeScale, and every Hazard_* toggle
+(Hazard_Zombies, Hazard_Scoutmaster, Hazard_Bees, Hazard_Geysers, ...).
+Unknown settings are rejected when the file loads, and the mode is skipped.

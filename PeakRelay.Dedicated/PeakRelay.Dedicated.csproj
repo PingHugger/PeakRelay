@@ -22,6 +22,11 @@
     <ProjectReference Include="..\PeakRelay.Protocol\PeakRelay.Protocol.csproj" />
   </ItemGroup>
 
+  <!-- Documented example for the operator-facing gamemodes folder (shipped on publish) -->
+  <ItemGroup>
+    <None Include="..\gamemodes\SAMPLE-custom.txt" Link="gamemodes\SAMPLE-custom.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <Reference Include="BepInEx">
       <HintPath>..\lib\BepInEx.dll</HintPath>
