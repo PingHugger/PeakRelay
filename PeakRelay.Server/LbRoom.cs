@@ -145,17 +145,17 @@ public sealed class LbRoom
     /// (the sender actorNr inside still points at the original actor, which is what the
     /// client's PhotonView ownership logic expects).
     /// </summary>
-    private sealed record CachedEvent(int SenderActorNr, byte EventCode, byte[] Bytes);
+    private sealed record CachedEvent(int SenderActorNr, byte EventCode, bool Global, byte[] Bytes);
 
     private readonly List<CachedEvent> _eventCache = new();
 
     public int CacheCount { get { lock (_sync) return _eventCache.Count; } }
 
-    /// <summary>Store an already-encoded event in the room cache.</summary>
-    public void CacheEvent(int senderActorNr, byte eventCode, byte[] eventBytes)
+    /// <summary>Store an already-encoded event in the room cache (global survives its sender's leave).</summary>
+    public void CacheEvent(int senderActorNr, byte eventCode, bool global, byte[] eventBytes)
     {
         lock (_sync)
-            _eventCache.Add(new CachedEvent(senderActorNr, eventCode, eventBytes));
+            _eventCache.Add(new CachedEvent(senderActorNr, eventCode, global, eventBytes));
     }
 
     /// <summary>Replays every cached event to one actor (Photon Cloud join semantics).</summary>
@@ -171,11 +171,14 @@ public sealed class LbRoom
     /// <summary>
     /// RemoveFromRoomCache (cache op 6): drop cached events raised by
     /// <paramref name="senderActorNr"/> with the given event code (0 = any code).
+    /// Globally cached events (op 5, PUN Instantiate) are NOT purged here — on Photon
+    /// Cloud they outlive their raising actor; only room-scope caches go with the sender.
     /// </summary>
     public void RemoveCachedEvents(int senderActorNr, byte eventCode)
     {
         lock (_sync)
-            _eventCache.RemoveAll(e => e.SenderActorNr == senderActorNr &&
+            _eventCache.RemoveAll(e => !e.Global &&
+                                       e.SenderActorNr == senderActorNr &&
                                        (eventCode == 0 || e.EventCode == eventCode));
     }
 }

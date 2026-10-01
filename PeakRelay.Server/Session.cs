@@ -19,6 +19,11 @@ public sealed class Session : IDisposable
 {
     private const int MaxFrameSize = Frame.HeaderSize + Frame.MaxPayload;
 
+    private sealed record OutgoingMessage(byte[] Datagram, byte Channel, int Seq, DateTime CreatedAt);
+
+    private const int RetransmitIntervalMs = 250;
+    private const int ReliableTimeoutSeconds = 30;
+
     private readonly Socket _socket;
     private readonly ConcurrentQueue<byte[]> _outbound = new();
     private readonly Thread _reader;
@@ -29,6 +34,29 @@ public sealed class Session : IDisposable
     private readonly LbConnection _lb;
     private readonly LbPeer _peer;
     private int _disposed;
+
+    // ---- S->C reliable delivery ----
+    // Events/responses go out as ENET reliable commands the client ACKs. Unlike real ENET
+    // the server retransmits: if a frame is lost (or the client's ACK is), Photon's
+    // reliable stream would otherwise stall — the client waits for seq N forever.
+    // "Delivered" is detected via the client's ACKs (EnetPeer.LastAckedSeq); anything
+    // unACKed after ReliableTimeoutSeconds kills the session (the client reports a
+    // timeout, like against a real Photon server).
+    private readonly object _reliableSync = new();
+    private readonly List<OutgoingMessage> _reliableInFlight = new();
+
+    private void EnqueueReliable(byte[] wrapped, byte channel)
+    {
+        int seq;
+        byte[] datagram;
+        lock (_reliableSync)
+        {
+            seq = _enet.NextOutgoingSeq(channel);
+            datagram = _enet.BuildReliableDatagram(channel, wrapped, seq);
+            _reliableInFlight.Add(new OutgoingMessage(datagram, channel, seq, DateTime.UtcNow));
+        }
+        _writeSignal.Release();
+    }
 
     public Session(Socket socket, LbDispatcher dispatcher)
     {
@@ -98,11 +126,12 @@ public sealed class Session : IDisposable
 
     private void WriterLoop()
     {
+        var lastRetransmitCheck = DateTime.UtcNow;
         try
         {
             while (_disposed == 0)
             {
-                _writeSignal.Wait(50); // poll interval doubles as cross-session delivery latency bound
+                _writeSignal.Wait(25); // poll interval doubles as cross-session delivery latency bound
 
                 // 1) ENET-level + inline op replies (queued by this session's reader)
                 while (_outbound.TryDequeue(out var frame))
@@ -118,9 +147,40 @@ public sealed class Session : IDisposable
                     var msgType = isEvent ? LbConnection.MsgType_Event : LbConnection.MsgType_OperationResponse;
                     var wrapped = _lb.Wrap(bytes, msgType, encrypted: false);
                     Diagnostics.Dump($"S->C lb-{(isEvent ? "event" : "resp")}", wrapped, wrapped.Length);
-                    if (!WriteAll(Frame.Write(Envelope.Write(RelayOp.Data, 0, 0,
-                            _enet.BuildReliableDatagram(0, wrapped)))))
+                    EnqueueReliable(wrapped, channel: 0);
+                }
+
+                // 3) retransmit still-unacknowledged reliable messages, drop the session
+                //    when even retransmits stay unacknowledged
+                var now = DateTime.UtcNow;
+                if ((now - lastRetransmitCheck).TotalMilliseconds >= RetransmitIntervalMs)
+                {
+                    lastRetransmitCheck = now;
+                    var resend = new List<byte[]>();
+                    var timedOut = false;
+                    lock (_reliableSync)
+                    {
+                        _reliableInFlight.RemoveAll(m => m.Seq <= _enet.LastAckedSeq(m.Channel));
+                        foreach (var message in _reliableInFlight)
+                        {
+                            if ((now - message.CreatedAt).TotalSeconds > ReliableTimeoutSeconds)
+                            {
+                                timedOut = true;
+                                break;
+                            }
+                            resend.Add(message.Datagram);
+                        }
+                    }
+                    if (timedOut)
+                    {
+                        Console.Error.WriteLine("[relay-session] reliable S->C delivery timed out; dropping session");
                         return;
+                    }
+                    foreach (var datagram in resend)
+                    {
+                        if (!WriteAll(Frame.Write(Envelope.Write(RelayOp.Data, 0, 0, datagram))))
+                            return;
+                    }
                 }
             }
         }
@@ -191,12 +251,11 @@ public sealed class Session : IDisposable
             var payload = _enet.IncomingPayloads.Dequeue();
             _lb.HandleClientPayload(payload);
 
-            // key-exchange replies go out immediately (encrypted flag false)
+            // key-exchange replies go out as reliable commands like everything else
             foreach (var lbBytes in _lb.LbOutbound)
             {
                 Diagnostics.Dump("S->C lb-internal", lbBytes, lbBytes.Length);
-                Post(Frame.Write(Envelope.Write(RelayOp.Data, 0, requestId,
-                    _enet.BuildReliableDatagram(0, lbBytes))));
+                EnqueueReliable(lbBytes, channel: 0);
             }
             _lb.LbOutbound.Clear();
 
