@@ -40,6 +40,7 @@ internal static class ConsoleCommandRegistry
         new SayCommand(),
         new KickCommand(),
         new RestartHostCommand(),
+        new ModeCommand(),
         new StopCommand(),
         new VerboseCommand(),
         new ClearCommand(),
@@ -290,6 +291,33 @@ internal sealed class RestartHostCommand : IConsoleCommand
         ServerConsole.Message("Restarting the expedition hosting…");
         plugin.PluginStartHosting(DedicatedState.ConfiguredRoomName);
         ServerConsole.Success("Hosting restarted.");
+    }
+}
+
+internal sealed class ModeCommand : IConsoleCommand
+{
+    public string Name => "mode";
+    public string Description => "Shows the available gamemodes or switches to another one.";
+    public string Usage => "mode [name]";
+
+    public void Run(string[] args)
+    {
+        if (args.Length == 0)
+        {
+            ServerConsole.Message("Available gamemodes (← marks the active one):");
+            foreach (var mode in GameModeCatalog.All)
+            {
+                var marker = mode.Name == GameModeEngine.Active.Name ? " ←" : "";
+                var source = mode.Source == "file" ? "   (file)" : "";
+                ServerConsole.Message($"  {mode.Name}{source}{marker} — {mode.Description}");
+            }
+            if (GameModeCatalog.LoadWarnings.Count > 0)
+                ServerConsole.Warn("Some gamemode files were skipped — check the warnings in server.log.");
+            ServerConsole.Message("Switch with 'mode <name>'. Applies from the next run start.");
+            return;
+        }
+
+        ServerConsole.Message(GameModeEngine.SwitchTo(args[0]));
     }
 }
 
