@@ -75,7 +75,10 @@ cp PeakRelay.Client/bin/$BUILD_CONFIG/netstandard2.1/PeakRelay.Client.dll \
 echo ">> publishing relay (framework-dependent, portable)"
 "$DOTNET" publish PeakRelay.Server/PeakRelay.Server.csproj -c Release -f net8.0 \
     -o "$PAYLOAD/relay" --nologo -v q
-powershell -NoProfile -Command "Compress-Archive -Path '$(cygpath -w "$PAYLOAD/relay")' -DestinationPath '$(cygpath -w "$PAYLOAD/relay.zip")' -Force"
+# Zip the publish CONTENTS flat (like release.yml zips PeakRelay.Server.zip): consumers
+# extract straight into their target dir. RelayHost also still understands the historical
+# folder-rooted layout (relay/... entries) produced by older Compress-Archive calls.
+powershell -NoProfile -Command "Compress-Archive -Path '$(cygpath -w "$PAYLOAD/relay/*")' -DestinationPath '$(cygpath -w "$PAYLOAD/relay.zip")' -Force"
 
 echo ">> payload ready:"
 find "$PAYLOAD" -type f | sed "s|$ROOT/||" | sort
