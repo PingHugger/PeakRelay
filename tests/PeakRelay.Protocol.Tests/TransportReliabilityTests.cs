@@ -38,7 +38,7 @@ public sealed class TransportReliabilityTests
     private static byte[] ReliableCommand(byte channel, int seq, byte[] payload)
     {
         var cmd = new byte[12 + payload.Length];
-        cmd[0] = EnetPeer.CmdSendReliable;
+        cmd[0] = EnetWire.CmdSendReliable;
         cmd[1] = channel;
         cmd[2] = 1;
         BinaryPrimitives.WriteInt32BigEndian(cmd.AsSpan(4), cmd.Length);
@@ -50,7 +50,7 @@ public sealed class TransportReliabilityTests
     private static byte[] UnreliableCommand(byte channel, int reliableSeq, int unreliableSeq, byte[] payload)
     {
         var cmd = new byte[16 + payload.Length];
-        cmd[0] = EnetPeer.CmdSendUnreliable;
+        cmd[0] = EnetWire.CmdSendUnreliable;
         cmd[1] = channel;
         cmd[2] = 0;
         BinaryPrimitives.WriteInt32BigEndian(cmd.AsSpan(4), cmd.Length);
@@ -64,7 +64,7 @@ public sealed class TransportReliabilityTests
         int totalLength, int offset, byte[] payload)
     {
         var cmd = new byte[32 + payload.Length];
-        cmd[0] = EnetPeer.CmdSendFragment;
+        cmd[0] = EnetWire.CmdSendFragment;
         cmd[1] = channel;
         cmd[2] = 1;
         BinaryPrimitives.WriteInt32BigEndian(cmd.AsSpan(4), cmd.Length);
@@ -81,7 +81,7 @@ public sealed class TransportReliabilityTests
     private static byte[] AckCommand(byte channel, int ackedSeq, int sentTime)
     {
         var cmd = new byte[20];
-        cmd[0] = EnetPeer.CmdAck;
+        cmd[0] = EnetWire.CmdAck;
         cmd[1] = channel;
         cmd[2] = 1;
         BinaryPrimitives.WriteInt32BigEndian(cmd.AsSpan(4), 20);
@@ -168,7 +168,7 @@ public sealed class TransportReliabilityTests
         Assert.Equal(payload, peer.IncomingPayloads.Dequeue());
         // every reliable command must be ACKed (client resends otherwise); outbound
         // entries are datagrams, so the command byte sits behind the 12-byte header
-        Assert.Contains(peer.PopOutgoing(), d => d.Length > 12 && d[12] == EnetPeer.CmdAck);
+        Assert.Contains(peer.PopOutgoing(), d => d.Length > 12 && d[12] == EnetWire.CmdAck);
     }
 
     [Fact]

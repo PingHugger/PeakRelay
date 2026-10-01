@@ -35,13 +35,19 @@ public sealed class LbRoom
 
     public LbRoom(string name) => Name = name;
 
+    /// <summary>Actor numbers grow monotonically like Photon Cloud's; reuse of a just-vacated
+    /// number breaks PUN view ownership (instantiated views are keyed to the creator's actor
+    /// number). Explicit set for tests.</summary>
     public int NextActorNumber()
     {
-        int n = 1;
-        while (Actors.ContainsKey(n))
-            n++;
-        return n;
+        lock (_sync)
+            return ++_lastActorNumber;
     }
+
+    /// <summary>Test seam: seeds the monotonic actor counter.</summary>
+    internal void SetLastActorNumberForTests(int value) => _lastActorNumber = value;
+
+    private int _lastActorNumber;
 
     public int MasterClientNumber
     {

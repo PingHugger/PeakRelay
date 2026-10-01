@@ -54,7 +54,7 @@ public static class LauncherCli
         catch (LauncherUsageException ex)
         {
             Console.Error.WriteLine($"error: {ex.Message}");
-            Console.Error.WriteLine("usage: PeakRelay.Launcher [--dir <path>] [--yes] [--server-dir <path>] [doctor|install|update|play|host|selfupdate|set-token|clear-token|server-sync|server-start|server-stop]");
+            Console.Error.WriteLine("usage: PeakRelay.Launcher [--dir <path>] [--yes] [--server-dir <path>] [doctor|install|update|play|host|stage-relay|selfupdate|set-token|clear-token|server-sync|server-start|server-stop]");
             return 2;
         }
 
@@ -67,6 +67,7 @@ public static class LauncherCli
                 "update" => await InstallAsync(args, force: false).ConfigureAwait(false),
                 "play" => await PlayAsync(args).ConfigureAwait(false),
                 "host" => await HostAsync(args).ConfigureAwait(false),
+                "stage-relay" => StageRelay(args),
                 "selfupdate" => await SelfUpdateAsync().ConfigureAwait(false),
                 "set-token" => await SetTokenAsync(args).ConfigureAwait(false),
                 "clear-token" => await ClearTokenAsync().ConfigureAwait(false),
@@ -293,6 +294,16 @@ public static class LauncherCli
         var process = PlayLauncher.Start(gameDir);
         Console.WriteLine($"PEAK started (pid {process.Id})");
         return Task.FromResult(0);
+    }
+
+    /// <summary>Explicitly stages the standalone relay files (what the installer's relay
+    /// checkbox does). The launcher itself runs the relay in-process and never needs the
+    /// extracted copy — the old implicit extraction was removed with the v0.7.12 lock bug.</summary>
+    private static int StageRelay(Args args)
+    {
+        var dir = args.ServerDir ?? LauncherPaths.RelayDir;
+        Console.WriteLine(RelayStager.Stage(dir));
+        return 0;
     }
 
     private static async Task<int> HostAsync(Args args)
