@@ -6,7 +6,7 @@ namespace PeakRelay.Protocol;
 /// <summary>Message classes carried by the relay envelope.</summary>
 public enum RelayOp : byte
 {
-    /// <summary>Hello/handshake from client. No body.</summary>
+    /// <summary>Hello/handshake from client. Body: [byte wireVersion][0x00 pad].</summary>
     Hello = 1,
 
     /// <summary>Carries one raw Photon UDP datagram. Body: opaque bytes.</summary>
@@ -15,10 +15,10 @@ public enum RelayOp : byte
     /// <summary>Relay-level disconnect. No body.</summary>
     Bye = 3,
 
-    /// <summary>Server -> client: ack of handshake, echoes the client token. Body: token bytes.</summary>
+    /// <summary>Server -> client: ack of handshake. Empty body = accepted.</summary>
     Welcome = 4,
 
-    /// <summary>Server -> client: relay-level disconnect notice. No body.</summary>
+    /// <summary>Server -> client: relay-level disconnect notice. Body: reason string (UTF-8), e.g. "relay is v0.7.14, client speaks wire v1 — update the client".</summary>
     Kick = 5,
 }
 
@@ -32,6 +32,14 @@ public static class Envelope
     public const byte FlagNone = 0;
     public const byte FlagCompressed = 1; // reserved; never set in M0
 
+    /// <summary>Hello payload: [byte wireVersion][0x00 pad] — 2 bytes, keep short so the
+    /// handshake stays a single tiny frame. Older clients sent an EMPTY Hello; a missing
+    /// body therefore means wire v0 (pre-0.7.14, never version-checked itself).</summary>
+    public const int HelloBodySize = 2;
+
+    /// <summary>Extracts the wire version from a Hello body (0 = pre-versioning client).</summary>
+    public static int HelloWireVersion(ReadOnlySpan<byte> helloBody) =>
+        helloBody.Length >= 1 ? helloBody[0] : 0;
     public static byte[] Write(RelayOp op, byte flags, ushort requestId, ReadOnlySpan<byte> payload)
     {
         var buffer = new byte[HeaderSize + payload.Length];

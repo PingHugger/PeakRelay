@@ -100,7 +100,8 @@ public sealed class RelayClientSocket : IPhotonSocket, IDisposable
             _tcp = client;
             _stream = client.GetStream();
 
-            var hello = Envelope.Write(RelayOp.Hello, Envelope.FlagNone, NextId(), ReadOnlySpan<byte>.Empty);
+            var helloBody = new byte[] { Frame.Version, 0x00 };
+            var hello = Envelope.Write(RelayOp.Hello, Envelope.FlagNone, NextId(), helloBody);
             _stream.Write(Frame.Write(hello));
             _stream.Flush();
 
@@ -131,10 +132,20 @@ public sealed class RelayClientSocket : IPhotonSocket, IDisposable
                 var payload = new byte[frameLength - Frame.HeaderSize];
                 if (!ReadFull(stream, payload))
                     break;
-                if (Envelope.TryRead(payload, out var envelope) && envelope.Op == RelayOp.Data)
+                if (Envelope.TryRead(payload, out var envelope))
                 {
-                    var datagram = envelope.Payload.ToArray();
-                    HandleReceivedDatagram(datagram, datagram.Length, willBeReused: false);
+                    if (envelope.Op == RelayOp.Data)
+                    {
+                        var datagram = envelope.Payload.ToArray();
+                        HandleReceivedDatagram(datagram, datagram.Length, willBeReused: false);
+                    }
+                    else if (envelope.Op == RelayOp.Kick)
+                    {
+                        EnqueueDebugReturn(DebugLevel.ERROR,
+                            $"PeakRelay: relay refused the connection: {System.Text.Encoding.UTF8.GetString(envelope.Payload)}");
+                        HandleException(StatusCode.ExceptionOnConnect);
+                        return;
+                    }
                 }
             }
         }

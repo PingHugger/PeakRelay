@@ -99,7 +99,8 @@ public sealed class RelayTestSocket : IPhotonSocket, IDisposable
             _tcp = client;
             _stream = client.GetStream();
 
-            var hello = Envelope.Write(RelayOp.Hello, 0, NextId(), ReadOnlySpan<byte>.Empty);
+            var helloBody = new byte[] { Frame.Version, 0x00 };
+            var hello = Envelope.Write(RelayOp.Hello, 0, NextId(), helloBody);
             _stream.Write(Frame.Write(hello));
             _stream.Flush();
 

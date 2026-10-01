@@ -14,15 +14,18 @@ namespace PeakRelay.Server;
 /// periodic drain of the LB outbound queue — the drain is on the writer (not inline with op
 /// dispatch) so events broadcast by OTHER sessions' readers are delivered without waiting
 /// for this client to send something first.
+///
+/// Transport contract (docs/protocol-notes.md): the relay transport is TCP, which already
+/// guarantees ordered delivery. The relay therefore ACKs client commands (the client's own
+/// reliability runs on those ACKs) but does NOT retransmit its own sends — a lost frame
+/// means a dead connection, which the liveness timeout below catches like any other.
 /// </summary>
 public sealed class Session : IDisposable
 {
     private const int MaxFrameSize = Frame.HeaderSize + Frame.MaxPayload;
 
-    private sealed record OutgoingMessage(byte[] Datagram, byte Channel, int Seq, DateTime CreatedAt);
-
-    private const int RetransmitIntervalMs = 250;
-    private const int ReliableTimeoutSeconds = 30;
+    /// <summary>Silence (no frame in either direction) longer than this drops the session.</summary>
+    private static readonly TimeSpan LivenessTimeout = TimeSpan.FromSeconds(60);
 
     private readonly Socket _socket;
     private readonly ConcurrentQueue<byte[]> _outbound = new();
@@ -34,29 +37,9 @@ public sealed class Session : IDisposable
     private readonly LbConnection _lb;
     private readonly LbPeer _peer;
     private int _disposed;
-
-    // ---- S->C reliable delivery ----
-    // Events/responses go out as ENET reliable commands the client ACKs. Unlike real ENET
-    // the server retransmits: if a frame is lost (or the client's ACK is), Photon's
-    // reliable stream would otherwise stall — the client waits for seq N forever.
-    // "Delivered" is detected via the client's ACKs (EnetPeer.LastAckedSeq); anything
-    // unACKed after ReliableTimeoutSeconds kills the session (the client reports a
-    // timeout, like against a real Photon server).
-    private readonly object _reliableSync = new();
-    private readonly List<OutgoingMessage> _reliableInFlight = new();
-
-    private void EnqueueReliable(byte[] wrapped, byte channel)
-    {
-        int seq;
-        byte[] datagram;
-        lock (_reliableSync)
-        {
-            seq = _enet.NextOutgoingSeq(channel);
-            datagram = _enet.BuildReliableDatagram(channel, wrapped, seq);
-            _reliableInFlight.Add(new OutgoingMessage(datagram, channel, seq, DateTime.UtcNow));
-        }
-        _writeSignal.Release();
-    }
+    private long _lastTrafficUtcTicks = DateTime.UtcNow.Ticks;
+    private volatile bool _handshaked;
+    private volatile bool _kickRequested;
 
     public Session(Socket socket, LbDispatcher dispatcher)
     {
@@ -87,6 +70,8 @@ public sealed class Session : IDisposable
         _writeSignal.Release();
     }
 
+    private void Touch() => Volatile.Write(ref _lastTrafficUtcTicks, DateTime.UtcNow.Ticks);
+
     private void ReaderLoop()
     {
         var header = new byte[Frame.HeaderSize];
@@ -103,6 +88,7 @@ public sealed class Session : IDisposable
                 var payload = new byte[frameLength - Frame.HeaderSize];
                 if (!TryReadFull(_socket, payload))
                     break;
+                Touch();
                 HandleFrame(payload);
             }
         }
@@ -126,61 +112,55 @@ public sealed class Session : IDisposable
 
     private void WriterLoop()
     {
-        var lastRetransmitCheck = DateTime.UtcNow;
         try
         {
+            var lastFragmentSweep = DateTime.UtcNow;
             while (_disposed == 0)
             {
                 _writeSignal.Wait(25); // poll interval doubles as cross-session delivery latency bound
 
-                // 1) ENET-level + inline op replies (queued by this session's reader)
                 while (_outbound.TryDequeue(out var frame))
                 {
                     if (!WriteAll(frame))
                         return;
+                    Touch();
                 }
 
-                // 2) LB events/responses queued from anywhere (own dispatch, room broadcasts)
+                if (_kickRequested)
+                    return; // kick frame is written (drain above); close via Dispose
+
                 while (_peer.LbOutbound.TryDequeue(out var message))
                 {
                     var (bytes, isEvent) = message;
                     var msgType = isEvent ? LbConnection.MsgType_Event : LbConnection.MsgType_OperationResponse;
                     var wrapped = _lb.Wrap(bytes, msgType, encrypted: false);
                     Diagnostics.Dump($"S->C lb-{(isEvent ? "event" : "resp")}", wrapped, wrapped.Length);
-                    EnqueueReliable(wrapped, channel: 0);
+                    if (!WriteAll(Frame.Write(Envelope.Write(RelayOp.Data, 0, 0,
+                            _enet.BuildReliableDatagram(0, wrapped)))))
+                        return;
+                    Touch();
                 }
 
-                // 3) retransmit still-unacknowledged reliable messages, drop the session
-                //    when even retransmits stay unacknowledged
-                var now = DateTime.UtcNow;
-                if ((now - lastRetransmitCheck).TotalMilliseconds >= RetransmitIntervalMs)
+                // reclaim fragment sets abandoned mid-reassembly (sender died); reassembly
+                // itself is reliable — this only bounds memory, never drops live sets
+                if ((DateTime.UtcNow - lastFragmentSweep).TotalSeconds > 30)
                 {
-                    lastRetransmitCheck = now;
-                    var resend = new List<byte[]>();
-                    var timedOut = false;
-                    lock (_reliableSync)
-                    {
-                        _reliableInFlight.RemoveAll(m => m.Seq <= _enet.LastAckedSeq(m.Channel));
-                        foreach (var message in _reliableInFlight)
-                        {
-                            if ((now - message.CreatedAt).TotalSeconds > ReliableTimeoutSeconds)
-                            {
-                                timedOut = true;
-                                break;
-                            }
-                            resend.Add(message.Datagram);
-                        }
-                    }
-                    if (timedOut)
-                    {
-                        Console.Error.WriteLine("[relay-session] reliable S->C delivery timed out; dropping session");
-                        return;
-                    }
-                    foreach (var datagram in resend)
-                    {
-                        if (!WriteAll(Frame.Write(Envelope.Write(RelayOp.Data, 0, 0, datagram))))
-                            return;
-                    }
+                    lastFragmentSweep = DateTime.UtcNow;
+                    _enet.SweepStaleFragments();
+                }
+
+                if (!_handshaked &&
+                    DateTime.UtcNow.Ticks - Volatile.Read(ref _lastTrafficUtcTicks) > TimeSpan.FromSeconds(10).Ticks)
+                {
+                    Console.Error.WriteLine("[relay-session] no Hello within 10 s; dropping session");
+                    return;
+                }
+
+                var idle = DateTime.UtcNow.Ticks - Volatile.Read(ref _lastTrafficUtcTicks);
+                if (idle > LivenessTimeout.Ticks)
+                {
+                    Console.Error.WriteLine("[relay-session] liveness timeout; dropping session");
+                    return;
                 }
             }
         }
@@ -223,15 +203,34 @@ public sealed class Session : IDisposable
         switch (envelope.Op)
         {
             case RelayOp.Hello:
-                Post(Frame.Write(Envelope.Write(RelayOp.Welcome, 0, envelope.RequestId, Array.Empty<byte>())));
+                HandleHello(envelope);
                 return;
             case RelayOp.Bye:
                 Dispose();
                 return;
             case RelayOp.Data:
+                if (!_handshaked)
+                    return; // Data before Hello: not ours to answer
                 HandleDatagram(envelope.Payload, envelope.RequestId);
                 return;
         }
+    }
+
+    private void HandleHello(Envelope.EnvelopeReader envelope)
+    {
+        var wireVersion = Envelope.HelloWireVersion(envelope.Payload);
+        if (wireVersion != Frame.Version)
+        {
+            // incompatible client: say why, then close. Older relays just closed silently.
+            var reason = $"relay wire v{Frame.Version}, client speaks v{wireVersion} — update PeakRelay";
+            Post(Frame.Write(Envelope.Write(RelayOp.Kick, 0, envelope.RequestId,
+                System.Text.Encoding.UTF8.GetBytes(reason))));
+            Console.Error.WriteLine($"[relay-session] wire version mismatch (client v{wireVersion}); kicked");
+            _kickRequested = true; // writer flushes the Kick frame, then closes the session
+            return;
+        }
+        _handshaked = true;
+        Post(Frame.Write(Envelope.Write(RelayOp.Welcome, 0, envelope.RequestId, Array.Empty<byte>())));
     }
 
     private void HandleDatagram(ReadOnlySpan<byte> datagram, ushort requestId)
@@ -251,11 +250,12 @@ public sealed class Session : IDisposable
             var payload = _enet.IncomingPayloads.Dequeue();
             _lb.HandleClientPayload(payload);
 
-            // key-exchange replies go out as reliable commands like everything else
+            // key-exchange replies go out immediately (encrypted flag false)
             foreach (var lbBytes in _lb.LbOutbound)
             {
                 Diagnostics.Dump("S->C lb-internal", lbBytes, lbBytes.Length);
-                EnqueueReliable(lbBytes, channel: 0);
+                Post(Frame.Write(Envelope.Write(RelayOp.Data, 0, requestId,
+                    _enet.BuildReliableDatagram(0, lbBytes))));
             }
             _lb.LbOutbound.Clear();
 

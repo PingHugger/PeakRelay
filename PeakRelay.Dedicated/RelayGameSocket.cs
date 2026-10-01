@@ -104,7 +104,8 @@ public sealed class RelayGameSocket : IPhotonSocket, IDisposable
             _tcp = client;
             _stream = client.GetStream();
 
-            var hello = Envelope.Write(RelayOp.Hello, Envelope.FlagNone, NextId(), ReadOnlySpan<byte>.Empty);
+            var helloBody = new byte[] { Frame.Version, 0x00 };
+            var hello = Envelope.Write(RelayOp.Hello, Envelope.FlagNone, NextId(), helloBody);
             _stream.Write(Frame.Write(hello));
             _stream.Flush();
 

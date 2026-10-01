@@ -94,6 +94,24 @@ commands generated in `EnetPeer`, routed through `peerBase`). The socket is a du
 pipe. So `RelaySocket` can carry PUN's own datagrams opaquely over our relay protocol with
 PUN2 semantics fully intact — no reliability logic of ours, no Protocol16 handling of ours.
 
+## Transport contract (since v0.7.14)
+
+The relay transport is TCP, which already guarantees ordered, lossless delivery between
+living endpoints. Therefore:
+
+- The relay **ACKs** client commands (types 2/5/6/8, plus reliable server-time) — this is
+  what clears the client's own in-flight queue and drives its RTT/server-time clock
+  (`EnetPeer.cs:1286`). Without our ACKs the client resends forever.
+- The relay does **NOT retransmit** its own sends. A "lost" frame means a dead connection;
+  the session liveness timeout (60 s of silence) ends it like any other disconnect.
+- ENET sequence numbers on server→client reliable commands exist because Photon clients
+  dispatch per-channel streams contiguously from 1 (15-bit, wrapping at short.MaxValue).
+- The Hello handshake carries the wire version (`[byte version][0x00]`); a mismatching
+  client is kicked with a human-readable reason instead of a silent hang.
+- Fragment reassembly (type 8) treats fragment headers as untrusted input: total length is
+  capped (1 MiB) and fragment count is capped (256); sets abandoned mid-reassembly are
+  swept after 60 s.
+
 ## Player identity contract (verified against references/ — fix for the "broken player" bug)
 
 PEAK keys its whole host-side spawn flow (`CharacterSpawner.HostUpdate` →
