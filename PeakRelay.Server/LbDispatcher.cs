@@ -81,7 +81,10 @@ public sealed class LbDispatcher
                 HandleAuthenticate(peer, request);
                 break;
             case LbOp.JoinLobby:
-                break; // accepted; lobby stats flow comes with the M5 directory
+                // Realtime expects a response before OpJoinLobby callback fires; the relay
+                // has no lobby stats, so an empty Ok is the full contract.
+                SendResponse(peer, request.Op, LbError.Ok);
+                break;
             case LbOp.CreateGame:
             case LbOp.JoinGame:
             case LbOp.JoinRandomGame:
@@ -378,10 +381,18 @@ public sealed class LbDispatcher
         // joiners see the host's Instantiates/RPCs. AddToRoomCache(4)/Global(5) STORE the
         // event AND still deliver it to the current receivers (Photon Cloud does both —
         // store-only would leave everyone already in the room blind to new objects).
+        //
+        // 5 is GLOBAL: on Photon Cloud a globally cached event stays cached even when its
+        // raising actor leaves (PUN Instantiate raises exactly this op, and room objects
+        // must survive the creator's disconnect). Only room-scope caches (4) are purged
+        // with their sender.
         switch (cacheOp)
         {
             case 6: // RemoveFromRoomCache: removal only, nothing is delivered
                 room.RemoveCachedEvents(peer.ActorNumber, eventCode);
+                SendResponse(peer, LbOp.RaiseEvent, LbError.Ok);
+                return;
+            case 7: // RemoveFromRoomCacheForActorsLeft — nothing to purge we track; accept silently
                 SendResponse(peer, LbOp.RaiseEvent, LbError.Ok);
                 return;
             case 0:
@@ -408,7 +419,7 @@ public sealed class LbDispatcher
 
         var routed = BuildEvent();
         if (cacheOp is 4 or 5)
-            room.CacheEvent(peer.ActorNumber, eventCode, routed);
+            room.CacheEvent(peer.ActorNumber, eventCode, global: cacheOp == 5, routed);
 
         if (request.Parameters.TryGetValue(LbParam.ActorList, out var targets))
         {

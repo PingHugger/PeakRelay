@@ -110,6 +110,54 @@ public sealed class EventCacheTests
         Assert.Equal(0, RoomCacheCount(dispatcher, "purge-room"));
     }
 
+    /// <summary>
+    /// PUN Instantiate raises with cache op 5 (AddToRoomCacheGlobal). On Photon Cloud those
+    /// events outlive their raising actor — a host that leaves mid-game must not take the
+    /// world's networked objects with it, or every later joiner spawns into an empty world.
+    /// </summary>
+    [Fact]
+    public void Globally_cached_events_survive_their_senders_departure()
+    {
+        var dispatcher = new LbDispatcher("127.0.0.1:5055");
+        var host = NewPeer(new EnetPeer());
+        var guest = NewPeer(new EnetPeer());
+
+        dispatcher.Dispatch(host, Create("global-room"), RelayServerRole.Game);
+        dispatcher.Dispatch(guest, Join("global-room"), RelayServerRole.Game);
+
+        dispatcher.Dispatch(host, Raise(202, cacheOp: 5, "instantiate-world"), RelayServerRole.Game);
+        dispatcher.Dispatch(guest, Raise(203, cacheOp: 4, "rpc-transient"), RelayServerRole.Game);
+        Assert.Equal(2, RoomCacheCount(dispatcher, "global-room"));
+
+        dispatcher.Dispatch(guest, new LbRequest { Op = LbOp.Leave, Parameters = new() }, RelayServerRole.Game);
+        Assert.Equal(1, RoomCacheCount(dispatcher, "global-room")); // global one survives
+
+        // room-wide removal (code 0) also spares the global cache
+        dispatcher.Dispatch(host, Raise(0, 6, null!), RelayServerRole.Game);
+        Assert.Equal(1, RoomCacheCount(dispatcher, "global-room"));
+
+        var fresh = NewPeer(new EnetPeer());
+        dispatcher.Dispatch(fresh, Join("global-room"), RelayServerRole.Game);
+        var replayed = DrainEvents(fresh).Select(e => e.Code).ToList();
+        Assert.Contains((byte)202, replayed);
+        Assert.DoesNotContain((byte)203, replayed);
+    }
+
+    [Fact]
+    public void JoinLobby_gets_a_response()
+    {
+        var dispatcher = new LbDispatcher("127.0.0.1:5055");
+        var client = NewPeer(new EnetPeer());
+
+        dispatcher.Dispatch(client, new LbRequest { Op = LbOp.JoinLobby, Parameters = new() }, RelayServerRole.Master);
+
+        var responses = new System.Collections.Generic.List<int>();
+        while (client.LbOutbound.TryDequeue(out var entry))
+            if (!entry.IsEvent)
+                responses.Add(1);
+        Assert.Single(responses); // Realtime's OpJoinLobby callback waits for this
+    }
+
     private static int RoomCacheCount(LbDispatcher dispatcher, string room)
     {
         var field = typeof(LbDispatcher).GetField("_rooms",
