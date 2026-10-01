@@ -6,7 +6,7 @@
     plugins derive their BepInEx version from it, CI tags drive releases from it.
   -->
   <PropertyGroup>
-    <Version>0.7.13</Version>
+    <Version>0.7.14</Version>
     <Authors>PingHugger</Authors>
     <Product>PeakRelay</Product>
     <LangVersion>12</LangVersion>
