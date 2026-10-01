@@ -78,7 +78,7 @@ echo ">> publishing relay (framework-dependent, portable)"
 # Zip the publish CONTENTS flat (like release.yml zips PeakRelay.Server.zip): consumers
 # extract straight into their target dir. RelayHost also still understands the historical
 # folder-rooted layout (relay/... entries) produced by older Compress-Archive calls.
-powershell -NoProfile -Command "Compress-Archive -Path '$(cygpath -w "$PAYLOAD/relay/*")' -DestinationPath '$(cygpath -w "$PAYLOAD/relay.zip")' -Force"
+powershell -NoProfile -Command "Set-Location '$(cygpath -w "$PAYLOAD/relay")'; Compress-Archive -Path * -DestinationPath '$(cygpath -w "$PAYLOAD/relay.zip")' -Force"
 
 echo ">> payload ready:"
 find "$PAYLOAD" -type f | sed "s|$ROOT/||" | sort
